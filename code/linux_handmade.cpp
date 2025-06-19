@@ -517,6 +517,10 @@ internal void LinuxProcessPendingMessages(Display *DisplayHandle, Window WindowH
                 {
                     LinuxProcessKeyPress(&KeyboardController->ActionRight, IsDown);
                 }
+                else if(Symbol == XK_space)
+                {
+                    LinuxProcessKeyPress(&KeyboardController->Start, IsDown);
+                }
                 else if(Symbol == XK_p)
                 {
                     if(IsDown)
@@ -725,8 +729,8 @@ int main(int ArgC, char *Args[])
     {
         Window RootWindow = XDefaultRootWindow(DisplayHandle);
         int Screen = XDefaultScreen(DisplayHandle);
-        int Width = 1920/2;
-        int Height = 1080/2;
+        int Width = 1920;
+        int Height = 1080;
         int ScreenBitDepth = 24;
         XVisualInfo WindowVisualInfo = {};
         if(XMatchVisualInfo(DisplayHandle, Screen, ScreenBitDepth, TrueColor, &WindowVisualInfo))
@@ -893,7 +897,7 @@ int main(int ArgC, char *Args[])
                 u32 BytesPerSample = (sizeof(s16)*ChannelCount);
                 
 #if 1              
-                r32 GameUpdateHz = 30;
+                r32 GameUpdateHz = 60;
 #else
                 r32 GameUpdateHz = LinuxGetMonitorRefreshRate(DisplayHandle, RootWindow);
 #endif

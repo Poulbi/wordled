@@ -47,10 +47,41 @@ struct loaded_bitmap
     u32 *Pixels;
 };
 
+struct color_rgb
+{
+    union
+    {
+        struct
+        {
+            r32 R;
+            r32 G;
+            r32 B;
+        };
+        r32 E[3];
+    };
+};
+
+struct view
+{
+    u32 PointsToPixels;
+    
+    v2 SizePixels;
+    v2 SizePoints;
+    
+    v2 TopLeft;
+    v2 BottomRight;
+    // NOTE(luca): These pixels are added to points to center them when rendering.
+    v2 PointPad;
+    
+    v2 CenterOffset;
+};
+
 struct game_state
 {
     r32 Slope;
     r32 Step;
+    r32 B;
+    r32 C;
 };
 
 #define HANDMADE_H
