@@ -304,42 +304,36 @@ DEBUGLoadBMP(thread_context *Thread, debug_platform_read_entire_file *DEBUGPlatf
 }
 
 internal void
-DrawVerticalAxis(game_offscreen_buffer *Buffer, 
-                 u32 ViewHeight, u32 PointsToPixels, v2 Pad, v2 PointPad, v2 PointCenterOffset,
-                 r32 PointX)
+DrawVerticalAxis(game_offscreen_buffer *Buffer, view *View, r32 PointX)
 {
-    PointX += PointCenterOffset.X;
+    PointX += View->CenterOffset.X;
     
     for(u32 Y = 0;
-        Y < ViewHeight;
+        Y < View->SizePixels.Y;
         Y++)
     {
-        u32 X = PointX*PointsToPixels + PointPad.X;
+        u32 X = PointX*View->PointsToPixels + View->TopLeft.X + View->PointPad.X;
         
-        v2 LineMin = {(r32)X, (r32)Y + Pad.Y};
+        v2 LineMin = {(r32)X, (r32)Y + View->TopLeft.Y};
         v2 LineMax = LineMin + v2{1, 1};
         
-        DrawRectangle(Buffer,
-                      LineMin, LineMax,
-                      0.0f, 0.0f, 1.0f);
+        DrawRectangle(Buffer, LineMin, LineMax, 0.0f, 0.0f, 1.0f);
         
     }
 }
 
 internal void
-DrawHorizontalAxis(game_offscreen_buffer *Buffer,
-                   u32 ViewWidth, u32 PointsToPixels, v2 Pad, v2 PointPad, v2 PointCenterOffset,
-                   r32 PointY)
+DrawHorizontalAxis(game_offscreen_buffer *Buffer, view *View, r32 PointY)
 {
-    PointY += PointCenterOffset.Y;
+    PointY += View->CenterOffset.Y;
     
     for(u32 X = 0;
-        X < ViewWidth;
+        X < View->SizePixels.X;
         X++)
     {
-        u32 Y = PointY*PointsToPixels + PointPad.Y;
+        u32 Y = PointY*View->PointsToPixels + View->TopLeft.Y + View->PointPad.Y;
         
-        v2 LineMin = {(r32)X + Pad.X, (r32)Y};
+        v2 LineMin = {(r32)X + View->TopLeft.X, (r32)Y};
         v2 LineMax = LineMin + v2{1, 1};
         
         DrawRectangle(Buffer,
@@ -350,26 +344,39 @@ DrawHorizontalAxis(game_offscreen_buffer *Buffer,
 }
 
 internal void
-DrawPoint(game_offscreen_buffer *Buffer,
-          v2 TopLeft, v2 BottomRight,
-          u32 PointsToPixels, v2 Pad, v2 PointPad, v2 PointCenterOffset,
-          v2 Point, v2 PointSize = {1, 1})
+DrawPoint(game_offscreen_buffer *Buffer, view *View, v2 Point, color_rgb Color, v2 PointSize = {1, 1})
 {
     Point.Y *= -1;
-    Point += PointCenterOffset;
-    v2 PointMin = Point*PointsToPixels + PointPad;
+    Point += View->CenterOffset;
+    v2 PointMin = Point*View->PointsToPixels + View->TopLeft + View->PointPad;
     v2 PointMax = PointMin + v2{1, 1};
     PointMin += -PointSize;
     PointMax += PointSize;
     
-    b32 IsOutOfView = ((PointMin.X < TopLeft.X) ||
-                       (PointMin.Y < TopLeft.Y) || 
-                       (PointMax.X > BottomRight.X) ||
-                       (PointMax.Y > BottomRight.Y)); 
+    b32 IsOutOfView = ((PointMin.X < View->TopLeft.X) ||
+                       (PointMin.Y < View->TopLeft.Y) || 
+                       (PointMax.X > View->BottomRight.X) ||
+                       (PointMax.Y > View->BottomRight.Y)); 
     if(!IsOutOfView)
     {
         DrawRectangle(Buffer, PointMin, PointMax,
-                      1.0f, 0.0f, 1.0f);
+                      Color.R, Color.G, Color.B);
+    }
+    
+}
+
+internal void
+DrawLine(game_offscreen_buffer *Buffer, view *View, 
+         r32 Slope, r32 B, r32 Step, 
+         color_rgb Color)
+{
+    
+    for(r32 X = -(View->CenterOffset.X + 1);
+        X < (View->CenterOffset.X + 1);
+        X += Step)
+    {
+        r32 Y = X * Slope + B;
+        DrawPoint(Buffer, View, v2{X, Y}, Color, {.5, .5});
     }
     
 }
@@ -388,28 +395,20 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->Step = 0.5f;
     }
     
-    u32 PointsToPixels = 20;
-    v2 ViewSizePixels = V2((r32)(0.56f*Buffer->Width), 
-                           (r32)(1.00f*Buffer->Height));
-    // NOTE(luca): This is truncated so that when it is scaled back to pixels we can use the "lost" pixels for centering.  On top of that we make sure that it is an even number so both axises pass through {0, 0}.
-    
-    v2 ViewSizePoints = V2(((r32)(((u32)ViewSizePixels.X / PointsToPixels) & (0xFFFFFFFF - 1))),
-                           ((r32)(((u32)ViewSizePixels.Y / PointsToPixels) & (0xFFFFFFFF - 1)))); 
-    
-    v2 ScreenCenter = 0.5f*ViewSizePixels;
-    
-    // NOTE(luca): This value is used to interpret points as being centered.
-    v2 PointCenterOffset = 0.5f*ViewSizePoints;
-    
-    // NOTE(luca): Make it so that we can only draw in a restricted area, this is useful so we can change the scale in both dimensions.
-    
     v2 BufferSize = {(r32)Buffer->Width, (r32)Buffer->Height};
-    v2 Pad = (BufferSize - ViewSizePixels)/2.0f; 
     
-    // NOTE(luca): We need to add padding to center points in the restricted area
-    v2 PointPad = Pad + 0.5f*(ViewSizePixels - (r32)PointsToPixels*ViewSizePoints);
-    v2 TopLeft = Pad;
-    v2 BottomRight = Pad + ViewSizePixels;
+    view View = {};
+    View.PointsToPixels = 20;
+    View.SizePixels = {(r32)(Buffer->Width), (r32)(Buffer->Height)};
+    // NOTE(luca): Create a square based on 16/9 aspect ratio.
+    View.SizePixels.X *= (1.00f - 7.0f/16.0f);
+    // NOTE(luca): This is truncated so that when it is scaled back to pixels we can use the "lost" pixels for centering.  On top of that we make sure that it is an even number so both axises' middle align with the center..
+    View.SizePoints = V2(((r32)(((u32)View.SizePixels.X / View.PointsToPixels) & (~1))),
+                         ((r32)(((u32)View.SizePixels.Y / View.PointsToPixels) & (~1)))); 
+    View.CenterOffset = 0.5f*View.SizePoints;
+    View.TopLeft = (BufferSize - View.SizePixels)/2.0f; 
+    View.BottomRight = View.TopLeft + View.SizePixels;
+    View.PointPad = 0.5f*(View.SizePixels - (r32)View.PointsToPixels*View.SizePoints);
     
     for(u32 ControllerIndex = 0;
         ControllerIndex < ArrayCount(Input->Controllers);
@@ -425,8 +424,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
             else
             {
+                r32 SlopeStep = 1.0f*Input->dtForFrame;
+                r32 StepStep = 1.0f*Input->dtForFrame;
+                r32 BStep = 1.0f*Input->dtForFrame;
+                r32 CStep = 8.0f*Input->dtForFrame;
                 
-                r32 SlopeStep = 2.0f*Input->dtForFrame;
                 if(Controller->MoveUp.EndedDown)
                 {
                     GameState->Slope += SlopeStep;
@@ -439,14 +441,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 
                 if(Controller->MoveRight.EndedDown)
                 {
-                    GameState->Step -= 0.02f;
+                    GameState->Step -= StepStep;
                     
                 }
-                
                 if(Controller->MoveLeft.EndedDown)
                 {
-                    GameState->Step += 0.02f;
+                    GameState->Step += StepStep;
                 }
+                
                 if(GameState->Step <= 0)
                 {
                     GameState->Step = 0.001;
@@ -454,8 +456,28 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 
                 if(Controller->ActionUp.EndedDown)
                 {
-                    GameState->Step = 0.5f;
+                    GameState->C += CStep;
+                }
+                if(Controller->ActionDown.EndedDown)
+                {
+                    GameState->C -= CStep;
+                }
+                
+                if(Controller->ActionRight.EndedDown)
+                {
+                    GameState->B += BStep;
+                }
+                if(Controller->ActionLeft.EndedDown)
+                {
+                    GameState->B -= BStep;
+                }
+                
+                if(Controller->Start.EndedDown)
+                {
+                    GameState->Step = 0.01f;
                     GameState->Slope = 1.0f;
+                    GameState->B = 0.0f;
+                    GameState->C = 0.0f;
                 }
             };
         }
@@ -464,55 +486,53 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     
     //-Rendering 
     
-    DrawRectangle(Buffer, TopLeft, BottomRight, 0.1f, 0.1f, 0.1f);
-    DrawHorizontalAxis(Buffer, ViewSizePixels.X, PointsToPixels, Pad, PointPad, PointCenterOffset, 0);
-    DrawVerticalAxis(Buffer, ViewSizePixels.Y, PointsToPixels, Pad, PointPad, PointCenterOffset, 0);
+    DrawRectangle(Buffer, View.TopLeft, View.BottomRight, 0.1f, 0.1f, 0.1f);
+    DrawHorizontalAxis(Buffer, &View, 0);
+    DrawVerticalAxis(Buffer, &View, 0);
     
     // X Points
     for(r32 Col = 0;
-        Col <= ViewSizePoints.X;
+        Col <= View.SizePoints.X;
         Col++)
     {
-        v2 LineMin = {Col, PointCenterOffset.Y - 0.5f};
-        v2 LineMax = {Col, PointCenterOffset.Y + 0.5f};
+        v2 LineMin = v2{Col, View.CenterOffset.Y - 0.5f};
+        v2 LineMax = v2{Col, View.CenterOffset.Y + 0.5f};
+        LineMin = (LineMin*View.PointsToPixels) + View.TopLeft + View.PointPad;
+        LineMax = (LineMax*View.PointsToPixels) + View.TopLeft + View.PointPad + v2{1, 1};
         
-        DrawRectangle(Buffer, 
-                      PointPad + LineMin*PointsToPixels, 
-                      PointPad + LineMax*PointsToPixels + v2{1, 1}, 
-                      1.0f, 1.0f, 1.0f);
+        DrawRectangle(Buffer, LineMin, LineMax, 1.0f, 1.0f, 1.0f);
     }
     
     // Y Points
     for(r32 Row = 0;
-        Row <= ViewSizePoints.Y;
+        Row <= View.SizePoints.Y;
         Row++)
     {
-        v2 LineMin = v2{PointCenterOffset.X - 0.5f, Row};
-        v2 LineMax = v2{PointCenterOffset.X + 0.5f, Row};
-        DrawRectangle(Buffer, 
-                      PointPad + LineMin*PointsToPixels , 
-                      PointPad + LineMax*PointsToPixels + v2{1, 1},
-                      1.0f, 1.0f, 1.0f);
+        v2 LineMin = v2{View.CenterOffset.X - 0.5f, Row};
+        v2 LineMax = v2{View.CenterOffset.X + 0.5f, Row};
+        LineMin = (LineMin*View.PointsToPixels) + View.TopLeft + View.PointPad;
+        LineMax = (LineMax*View.PointsToPixels) + View.TopLeft + View.PointPad + v2{1, 1};
+        DrawRectangle(Buffer, LineMin, LineMax, 1.0f, 1.0f, 1.0f);
     }
     
     
     // Plot some points
-    
-    r32 B = 0.0f;
-    r32 Step =  GameState->Step;
+    r32 B = GameState->B;
+    r32 C = GameState->C;
     r32 Slope = GameState->Slope;
+    r32 Step = GameState->Step;
     
-    for(r32 X = -(PointCenterOffset.X + 1);
-        X < (PointCenterOffset.X + 1);
+#if 0    
+    DrawLine(Buffer, &View, Slope, B, Step, {1.0f, 0.0f, 1.0f}); 
+#endif
+    
+    for(r32 X = -(View.CenterOffset.X + 1);
+        X < (View.CenterOffset.X + 1);
         X += Step)
     {
-        r32 Y = X * Slope + B;
-        DrawPoint(Buffer, 
-                  TopLeft, BottomRight, 
-                  PointsToPixels, Pad, PointPad, PointCenterOffset, 
-                  V2(X, Y), {.5, .5});
+        r32 Y = 16.0f*Slope*Sin(X + -4*B) + 2*C;
+        DrawPoint(Buffer, &View, v2{X, Y}, color_rgb{1.0f, 0.5f, 0.0f}, {.5, .5});
     }
-    
 }
 
 
