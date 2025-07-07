@@ -2,6 +2,15 @@
 #include "handmade_random.h"
 #include "handmade_graph.cpp"
 
+#if 1
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "libs/stb_truetype.h"
+#endif
+
+#if HANDMADE_INTERNAL
+#include <stdio.h>
+#endif
+
 internal s16
 GetSineSound(u32 SampleRate)
 {
@@ -388,12 +397,65 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
     
     game_state *GameState = (game_state *)Memory->PermanentStorage;
+    local_persist stbtt_fontinfo FontInfo = {};
+    local_persist unsigned char *Bitmap = 0;
+    local_persist int FontHeight, FontWidth;
     if(!Memory->IsInitialized)
     {
-        Memory->IsInitialized = true;
         GameState->Slope = 1.0f;
         GameState->Step = 0.5f;
+        
+        debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "data/font.ttf");
+        if(stbtt_InitFont(&FontInfo, (unsigned char*)File.Contents, 0))
+        {
+            int C = 'a';
+            float HeightPixels = 64;
+            float ScaleY = stbtt_ScaleForPixelHeight(&FontInfo, HeightPixels);
+            
+#if 1
+            Bitmap = stbtt_GetCodepointBitmap(&FontInfo, 0, ScaleY, C, &FontWidth, &FontHeight, 0, 0);
+#else
+            int Width = 100;
+            int Height = 100;
+            unsigned char Bitmap[Width*Height];
+            stbtt_MakeCodepointBitmap(&FontInfo, Bitmap, Width, Height, Width, 0, ScaleY, 'a');
+#endif
+            
+        }
+        else
+        {
+            Assert(0);
+        }
+        
+        Memory->IsInitialized = true;
+        
     }
+    
+    {
+        
+        u8 *Row = (u8 *)(Buffer->Memory);
+        // Rendering the font?
+        for(int  Y = 0;
+            Y < FontHeight;
+            Y++)
+        {
+            u32 *Pixel = (u32 *)Row;
+            for(int X = 0;
+                X < FontWidth;
+                X++)
+            {
+                u8 Brightness = Bitmap[Y*FontWidth+X];
+                u32 Color = ((0xFF << 24) |
+                             (Brightness << 16) |
+                             (Brightness << 8) |
+                             (Brightness << 0));
+                *Pixel++ = Color;
+            }
+            Row += Buffer->Pitch;
+        }
+        
+    }
+    
     
     v2 BufferSize = {(r32)Buffer->Width, (r32)Buffer->Height};
     
