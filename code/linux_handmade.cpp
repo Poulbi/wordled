@@ -729,8 +729,8 @@ int main(int ArgC, char *Args[])
     {
         Window RootWindow = XDefaultRootWindow(DisplayHandle);
         int Screen = XDefaultScreen(DisplayHandle);
-        int Width = 1920;
-        int Height = 1080;
+        int Width = 1920/2;
+        int Height = 1080/2;
         int ScreenBitDepth = 24;
         XVisualInfo WindowVisualInfo = {};
         if(XMatchVisualInfo(DisplayHandle, Screen, ScreenBitDepth, TrueColor, &WindowVisualInfo))
@@ -745,7 +745,7 @@ int main(int ArgC, char *Args[])
             u64 WindowAttributeMask = CWBitGravity | CWBackPixel | CWColormap | CWEventMask;
             
             Window WindowHandle = XCreateWindow(DisplayHandle, RootWindow,
-                                                1920 - Width - 10, 1080 - Height - 10,
+                                                1920 - Width - 10, 10,
                                                 Width, Height,
                                                 0,
                                                 WindowVisualInfo.depth, InputOutput,

@@ -5,7 +5,7 @@ cd "$ThisDir"
 
 mkdir ../build > /dev/null 2>&1
 
-CompilerFlags="-ggdb -O3 -DHANDMADE_INTERNAL -DHANDMADE_SLOW"
+CompilerFlags="-ggdb -DHANDMADE_INTERNAL -DHANDMADE_SLOW"
 WarningFlags="-Wall -Wextra -Wno-unused-but-set-variable -Wno-unused-variable -Wno-write-strings -Wno-unused-parameter -Wno-unused-function"
 
 printf 'handmade.cpp\n'
