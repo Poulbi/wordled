@@ -10,6 +10,18 @@
 #include "handmade_platform.h"
 #include "handmade_math.h"
 
+#include "libs/stb_truetype.h"
+
+#define WORDLE_LENGTH 5
+
+typedef enum
+{
+    SquareColor_Gray = 0,
+    SquareColor_Yellow = 1,
+    SquareColor_Green = 2,
+    SquareColor_Count
+} square_colors;
+
 struct memory_arena
 {
     memory_index Size;
@@ -61,27 +73,18 @@ struct color_rgb
     };
 };
 
-struct view
-{
-    u32 PointsToPixels;
-    
-    v2 SizePixels;
-    v2 SizePoints;
-    
-    v2 TopLeft;
-    v2 BottomRight;
-    // NOTE(luca): These pixels are added to points to center them when rendering.
-    v2 PointPad;
-    
-    v2 CenterOffset;
-};
-
 struct game_state
 {
-    r32 Slope;
-    r32 Step;
-    r32 B;
-    r32 C;
+    u32 PatternGrid[6][5];
+    
+    u32 SelectedColor;;
+    
+    stbtt_fontinfo FontInfo;
+    s32 FontAscent;
+    s32 FontDescent;
+    s32 FontLineGap;
+    v2 FontBoundingBox[2];
+    
 };
 
 #define HANDMADE_H

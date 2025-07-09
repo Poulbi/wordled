@@ -9,6 +9,7 @@
 
 #if HANDMADE_INTERNAL
 #include <stdio.h>
+#define NoOp { int X = 3; }
 #endif
 
 internal s16
@@ -81,7 +82,7 @@ RenderWeirdGradient(game_offscreen_buffer *Buffer, int BlueOffset, int GreenOffs
 internal void
 DrawRectangle(game_offscreen_buffer *Buffer,
               v2 vMin, v2 vMax,
-              r32 R, r32 G, r32 B)
+              color_rgb Color)
 {
     int MinX = RoundReal32ToInt32(vMin.X);
     int MaxX = RoundReal32ToInt32(vMax.X);
@@ -108,10 +109,10 @@ DrawRectangle(game_offscreen_buffer *Buffer,
         MaxY = Buffer->Height;
     }
     
-    u32 Color = 
-    (RoundReal32ToUInt32(R * 255.0f) << 2*8) | 
-    (RoundReal32ToUInt32(G * 255.0f) << 1*8) |
-    (RoundReal32ToUInt32(B * 255.0f) << 0*8);
+    u32 ColorValue = 
+    (RoundReal32ToUInt32(Color.R * 255.0f) << 2*8) | 
+    (RoundReal32ToUInt32(Color.G * 255.0f) << 1*8) |
+    (RoundReal32ToUInt32(Color.B * 255.0f) << 0*8);
     
     u8 *Row = ((u8 *)(Buffer->Memory) + 
                MinX*Buffer->BytesPerPixel + 
@@ -127,7 +128,7 @@ DrawRectangle(game_offscreen_buffer *Buffer,
             X < MaxX;
             X++)
         {
-            *Pixel++ = Color;
+            *Pixel++ = ColorValue;
         }
         
         Row += Buffer->Pitch;
@@ -313,81 +314,120 @@ DEBUGLoadBMP(thread_context *Thread, debug_platform_read_entire_file *DEBUGPlatf
 }
 
 internal void
-DrawVerticalAxis(game_offscreen_buffer *Buffer, view *View, r32 PointX)
+DrawCharacter(game_offscreen_buffer *Buffer,  u8 *FontBitmap,
+              int FontWidth, int FontHeight, 
+              int XOffset, int YOffset,
+              color_rgb Color)
 {
-    PointX += View->CenterOffset.X;
+    s32 MinX = 0;
+    s32 MinY = 0;
+    s32 MaxX = FontWidth;
+    s32 MaxY = FontHeight;
     
-    for(u32 Y = 0;
-        Y < View->SizePixels.Y;
+    if(XOffset < 0)
+    {
+        MinX = -XOffset;
+        XOffset = 0;
+    }
+    if(YOffset < 0)
+    {
+        MinY = -YOffset;
+        YOffset = 0;
+    }
+    if(XOffset + FontWidth > Buffer->Width)
+    {
+        MaxX -= ((XOffset + FontWidth) - Buffer->Width);
+    }
+    if(YOffset + FontHeight > Buffer->Height)
+    {
+        MaxY -= ((YOffset + FontHeight) - Buffer->Height);
+    }
+    
+    u8 *Row = (u8 *)(Buffer->Memory) + 
+    (YOffset*Buffer->Pitch) +
+    (XOffset*Buffer->BytesPerPixel);
+    
+    for(int  Y = MinY;
+        Y < MaxY;
         Y++)
     {
-        u32 X = PointX*View->PointsToPixels + View->TopLeft.X + View->PointPad.X;
-        
-        v2 LineMin = {(r32)X, (r32)Y + View->TopLeft.Y};
-        v2 LineMax = LineMin + v2{1, 1};
-        
-        DrawRectangle(Buffer, LineMin, LineMax, 0.0f, 0.0f, 1.0f);
-        
+        u32 *Pixel = (u32 *)Row;
+        for(int X = MinX;
+            X < MaxX;
+            X++)
+        {
+            
+            u8 Brightness = FontBitmap[Y*FontWidth+X];
+            u32 Value = ((0xFF << 24) |
+                         ((u32)(Color.R*Brightness) << 16) |
+                         ((u32)(Color.G*Brightness) << 8) |
+                         ((u32)(Color.B*Brightness) << 0));
+            *Pixel++ = Value;
+        }
+        Row += Buffer->Pitch;
     }
 }
 
 internal void
-DrawHorizontalAxis(game_offscreen_buffer *Buffer, view *View, r32 PointY)
+DrawText(game_state *GameState, game_offscreen_buffer *Buffer, 
+         r32 FontScale,
+         char *Text, u32 TextLen, v2 Offset, color_rgb Color)
 {
-    PointY += View->CenterOffset.Y;
     
-    for(u32 X = 0;
-        X < View->SizePixels.X;
-        X++)
+    for(u32 TextIndex = 0;
+        TextIndex < TextLen;
+        TextIndex++)
     {
-        u32 Y = PointY*View->PointsToPixels + View->TopLeft.Y + View->PointPad.Y;
+        int CharAt = Text[TextIndex];
         
-        v2 LineMin = {(r32)X + View->TopLeft.X, (r32)Y};
-        v2 LineMax = LineMin + v2{1, 1};
+        int FontWidth, FontHeight;
+        int AdvanceWidth, LeftSideBearing;
+        int X0, Y0, X1, Y1;
+        u8 *FontBitmap = 0;
+        // TODO(luca): Get rid of malloc.
+        FontBitmap = stbtt_GetCodepointBitmap(&GameState->FontInfo, 
+                                              FontScale, FontScale, 
+                                              CharAt, 
+                                              &FontWidth, &FontHeight, 0, 0);
+        stbtt_GetCodepointBitmapBox(&GameState->FontInfo, CharAt, 
+                                    FontScale, FontScale, 
+                                    &X0, &Y0, &X1, &Y1);
+        r32 YOffset = Offset.Y + Y0;
+        stbtt_GetCodepointHMetrics(&GameState->FontInfo, CharAt, &AdvanceWidth, &LeftSideBearing);
+        r32 XOffset = Offset.X + LeftSideBearing*FontScale;
         
-        DrawRectangle(Buffer,
-                      LineMin, LineMax,
-                      1.0f, 1.0f, 0.0f);
+        DrawCharacter(Buffer, FontBitmap, FontWidth, FontHeight, XOffset, YOffset, Color);
+        
+        Offset.X += (AdvanceWidth*FontScale);
+        free(FontBitmap);
     }
     
 }
 
-internal void
-DrawPoint(game_offscreen_buffer *Buffer, view *View, v2 Point, color_rgb Color, v2 PointSize = {1, 1})
+internal b32
+ValidLetterCountInGuess(char *Word, char *Guess, char Letter)
 {
-    Point.Y *= -1;
-    Point += View->CenterOffset;
-    v2 PointMin = Point*View->PointsToPixels + View->TopLeft + View->PointPad;
-    v2 PointMax = PointMin + v2{1, 1};
-    PointMin += -PointSize;
-    PointMax += PointSize;
+    b32 Valid = false;
     
-    b32 IsOutOfView = ((PointMin.X < View->TopLeft.X) ||
-                       (PointMin.Y < View->TopLeft.Y) || 
-                       (PointMax.X > View->BottomRight.X) ||
-                       (PointMax.Y > View->BottomRight.Y)); 
-    if(!IsOutOfView)
+    int CountInGuess = 0;
+    int CountInWord = 0;
+    for(int ScanIndex = 0;
+        ScanIndex < WORDLE_LENGTH;
+        ScanIndex++)
     {
-        DrawRectangle(Buffer, PointMin, PointMax,
-                      Color.R, Color.G, Color.B);
+        if(Letter == Word[ScanIndex])
+        {
+            CountInWord++;
+        }
+        if(Letter == Guess[ScanIndex])
+        {
+            CountInGuess++;
+        }
     }
     
-}
-
-internal void
-DrawLine(game_offscreen_buffer *Buffer, view *View, 
-         r32 Slope, r32 B, r32 Step, 
-         color_rgb Color)
-{
+    Valid = (CountInGuess <= CountInWord);
     
-    for(r32 X = -(View->CenterOffset.X + 1);
-        X < (View->CenterOffset.X + 1);
-        X += Step)
-    {
-        r32 Y = X * Slope + B;
-        DrawPoint(Buffer, View, v2{X, Y}, Color, {.5, .5});
-    }
-    
+    return Valid;
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -397,80 +437,32 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     Assert(sizeof(game_state) <= Memory->PermanentStorageSize);
     
     game_state *GameState = (game_state *)Memory->PermanentStorage;
-    local_persist stbtt_fontinfo FontInfo = {};
-    local_persist unsigned char *Bitmap = 0;
-    local_persist int FontHeight, FontWidth;
+    
     if(!Memory->IsInitialized)
     {
-        GameState->Slope = 1.0f;
-        GameState->Step = 0.5f;
-        
         debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "data/font.ttf");
-        if(stbtt_InitFont(&FontInfo, (unsigned char*)File.Contents, 0))
+        if(stbtt_InitFont(&GameState->FontInfo, (u8 *)File.Contents, stbtt_GetFontOffsetForIndex((u8 *)File.Contents, 0)))
         {
-            int C = 'a';
-            float HeightPixels = 64;
-            float ScaleY = stbtt_ScaleForPixelHeight(&FontInfo, HeightPixels);
+            GameState->FontInfo.data = (u8 *)File.Contents;
             
-#if 1
-            Bitmap = stbtt_GetCodepointBitmap(&FontInfo, 0, ScaleY, C, &FontWidth, &FontHeight, 0, 0);
-#else
-            int Width = 100;
-            int Height = 100;
-            unsigned char Bitmap[Width*Height];
-            stbtt_MakeCodepointBitmap(&FontInfo, Bitmap, Width, Height, Width, 0, ScaleY, 'a');
-#endif
+            int X0, Y0, X1, Y1;
+            v2 BoundingBox[2] = {};
+            stbtt_GetFontBoundingBox(&GameState->FontInfo, &X0, &Y0, &X1, &Y1);
+            GameState->FontBoundingBox[0] = v2{(r32)X0, (r32)Y0};
+            GameState->FontBoundingBox[1] = v2{(r32)X1, (r32)Y1};
+            stbtt_GetFontVMetrics(&GameState->FontInfo, &GameState->FontAscent, &GameState->FontDescent, &GameState->FontLineGap);
+            
             
         }
         else
         {
-            Assert(0);
+            // TODO(luca): Logging
         }
+        
+        GameState->SelectedColor = SquareColor_Yellow;
         
         Memory->IsInitialized = true;
-        
     }
-    
-    {
-        
-        u8 *Row = (u8 *)(Buffer->Memory);
-        // Rendering the font?
-        for(int  Y = 0;
-            Y < FontHeight;
-            Y++)
-        {
-            u32 *Pixel = (u32 *)Row;
-            for(int X = 0;
-                X < FontWidth;
-                X++)
-            {
-                u8 Brightness = Bitmap[Y*FontWidth+X];
-                u32 Color = ((0xFF << 24) |
-                             (Brightness << 16) |
-                             (Brightness << 8) |
-                             (Brightness << 0));
-                *Pixel++ = Color;
-            }
-            Row += Buffer->Pitch;
-        }
-        
-    }
-    
-    
-    v2 BufferSize = {(r32)Buffer->Width, (r32)Buffer->Height};
-    
-    view View = {};
-    View.PointsToPixels = 20;
-    View.SizePixels = {(r32)(Buffer->Width), (r32)(Buffer->Height)};
-    // NOTE(luca): Create a square based on 16/9 aspect ratio.
-    View.SizePixels.X *= (1.00f - 7.0f/16.0f);
-    // NOTE(luca): This is truncated so that when it is scaled back to pixels we can use the "lost" pixels for centering.  On top of that we make sure that it is an even number so both axises' middle align with the center..
-    View.SizePoints = V2(((r32)(((u32)View.SizePixels.X / View.PointsToPixels) & (~1))),
-                         ((r32)(((u32)View.SizePixels.Y / View.PointsToPixels) & (~1)))); 
-    View.CenterOffset = 0.5f*View.SizePoints;
-    View.TopLeft = (BufferSize - View.SizePixels)/2.0f; 
-    View.BottomRight = View.TopLeft + View.SizePixels;
-    View.PointPad = 0.5f*(View.SizePixels - (r32)View.PointsToPixels*View.SizePoints);
     
     for(u32 ControllerIndex = 0;
         ControllerIndex < ArrayCount(Input->Controllers);
@@ -486,117 +478,241 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
             else
             {
-                r32 SlopeStep = 1.0f*Input->dtForFrame;
-                r32 StepStep = 1.0f*Input->dtForFrame;
-                r32 BStep = 1.0f*Input->dtForFrame;
-                r32 CStep = 8.0f*Input->dtForFrame;
-                
-                if(Controller->MoveUp.EndedDown)
+                if(WasPressed(Input->MouseButtons[PlatformMouseButton_Right]))
                 {
-                    GameState->Slope += SlopeStep;
+                    GameState->SelectedColor = (GameState->SelectedColor < SquareColor_Count- 1) ?
+                        GameState->SelectedColor + 1: 0;
                 }
                 
-                if(Controller->MoveDown.EndedDown)
-                {
-                    GameState->Slope -= SlopeStep;
-                }
-                
-                if(Controller->MoveRight.EndedDown)
-                {
-                    GameState->Step -= StepStep;
-                    
-                }
-                if(Controller->MoveLeft.EndedDown)
-                {
-                    GameState->Step += StepStep;
-                }
-                
-                if(GameState->Step <= 0)
-                {
-                    GameState->Step = 0.001;
-                }
-                
-                if(Controller->ActionUp.EndedDown)
-                {
-                    GameState->C += CStep;
-                }
-                if(Controller->ActionDown.EndedDown)
-                {
-                    GameState->C -= CStep;
-                }
-                
-                if(Controller->ActionRight.EndedDown)
-                {
-                    GameState->B += BStep;
-                }
-                if(Controller->ActionLeft.EndedDown)
-                {
-                    GameState->B -= BStep;
-                }
-                
-                if(Controller->Start.EndedDown)
-                {
-                    GameState->Step = 0.01f;
-                    GameState->Slope = 1.0f;
-                    GameState->B = 0.0f;
-                    GameState->C = 0.0f;
-                }
-            };
+            }
         }
     }
     
     
-    //-Rendering 
+    char Text[256] = {};
+    int TextLen = 0;
     
-    DrawRectangle(Buffer, View.TopLeft, View.BottomRight, 0.1f, 0.1f, 0.1f);
-    DrawHorizontalAxis(Buffer, &View, 0);
-    DrawVerticalAxis(Buffer, &View, 0);
+    r32 FontScale = 0.0f;
+    r32 YAdvance = 0.0f;
+    r32 Baseline = 0.0f;
+    v2 TextOffset = {};
+    int AdvanceWidth = 0;
     
-    // X Points
-    for(r32 Col = 0;
-        Col <= View.SizePoints.X;
-        Col++)
+    Assert(GameState->SelectedColor < SquareColor_Count);
+    
+    r32 Width = 48.0f;
+    
+    v2 Min = {0.0f, 0.0f};
+    v2 Max = {Width, Width};
+    v2 Padding = {2.0f, 2.0f};
+    v2 Base = {0.0f, 0.0f};
+    color_rgb ColorGray = {0.23f, 0.23f, 0.24f};
+    color_rgb ColorYellow = {0.71f, 0.62f, 0.23f};
+    color_rgb ColorGreen = {0.32f, 0.55f, 0.31f};
+    
+    s32 Rows = 6;
+    s32 Columns = 5;
+    Base.X = 0.5f*(Buffer->Width - Columns*Width);
+    Base.Y = 0.5f*(Buffer->Height - Rows*Width);
+    
+    s32 SelectedX = CeilReal32ToInt32((r32)(Input->MouseX - Base.X)/(r32)(Width + Padding.X)) - 1;
+    s32 SelectedY = CeilReal32ToInt32((r32)(Input->MouseY - Base.Y)/(r32)(Width + Padding.Y)) - 1;
+    
+    Min.X = Base.X;
+    Min.Y = Base.Y;
+    for(s32 Y = 0;
+        Y < Rows;
+        Y++)
     {
-        v2 LineMin = v2{Col, View.CenterOffset.Y - 0.5f};
-        v2 LineMax = v2{Col, View.CenterOffset.Y + 0.5f};
-        LineMin = (LineMin*View.PointsToPixels) + View.TopLeft + View.PointPad;
-        LineMax = (LineMax*View.PointsToPixels) + View.TopLeft + View.PointPad + v2{1, 1};
+        for(s32 X = 0;
+            X < Columns;
+            X++)
+        {
+            color_rgb Color = {1.0f, 1.0f, 0.0f};
+            
+            Max = Min + Width;
+            
+            if((X == SelectedX) &&
+               (Y == SelectedY))
+            {
+                
+                if(Input->MouseButtons[PlatformMouseButton_Left].EndedDown)
+                {
+                    GameState->PatternGrid[Y][X] = GameState->SelectedColor;
+                }
+                
+                if(0) {}
+                else if(GameState->SelectedColor == 0)
+                {
+                    Color = ColorGray;
+                }
+                else if(GameState->SelectedColor == 1)
+                {
+                    Color = ColorYellow;
+                }
+                else if(GameState->SelectedColor == 2)
+                {
+                    Color = ColorGreen;
+                }
+                
+                DrawRectangle(Buffer, Min, Max, color_rgb{0.0f, 0.0f, 0.0f});
+                DrawRectangle(Buffer, 
+                              Min + Padding, Max - Padding,
+                              Color);
+            }
+            else
+            {
+                u32 PatternValue = GameState->PatternGrid[Y][X];
+                if(0) {}
+                else if(PatternValue == SquareColor_Gray)
+                {
+                    Color = ColorGray;
+                }
+                else if(PatternValue == SquareColor_Yellow)
+                {
+                    Color = ColorYellow;
+                }
+                else if(PatternValue == SquareColor_Green)
+                {
+                    Color = ColorGreen;
+                }
+                
+                DrawRectangle(Buffer, Min, Max, Color);
+            }
+            
+            
+            Min.X += Padding.X + Width;
+        }
+        Min.X = Base.X;
+        Min.Y += Padding.Y + Width;
+    }
+    
+    // Prepare drawing of the guesses.
+    FontScale = stbtt_ScaleForPixelHeight(&GameState->FontInfo, 24.0f);
+    YAdvance = FontScale*(GameState->FontAscent - 
+                          GameState->FontDescent + 
+                          GameState->FontLineGap);
+    Baseline = (GameState->FontAscent*FontScale);
+    TextOffset = v2{16.0f, 16.0f + Baseline};
+    
+    {
+        char Text[] = "\"novel\"";
+        int TextLen = sizeof(Text) - 1;
+        DrawText(GameState, Buffer, FontScale, Text, TextLen, TextOffset + -v2{8.0f, 0.0f}, ColorGreen);
+    }
+    
+    TextOffset.Y += YAdvance*2.0f;
+    
+    
+    //-Matche the pattern
+    
+    char *Word = "novel";
+    debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "data/words.txt");
+    
+    int WordsCount = File.ContentsSize / WORDLE_LENGTH;
+    if(File.Contents)
+    {
+        char *Words = (char *)File.Contents;
         
-        DrawRectangle(Buffer, LineMin, LineMax, 1.0f, 1.0f, 1.0f);
-    }
-    
-    // Y Points
-    for(r32 Row = 0;
-        Row <= View.SizePoints.Y;
-        Row++)
-    {
-        v2 LineMin = v2{View.CenterOffset.X - 0.5f, Row};
-        v2 LineMax = v2{View.CenterOffset.X + 0.5f, Row};
-        LineMin = (LineMin*View.PointsToPixels) + View.TopLeft + View.PointPad;
-        LineMax = (LineMax*View.PointsToPixels) + View.TopLeft + View.PointPad + v2{1, 1};
-        DrawRectangle(Buffer, LineMin, LineMax, 1.0f, 1.0f, 1.0f);
-    }
-    
-    
-    // Plot some points
-    r32 B = GameState->B;
-    r32 C = GameState->C;
-    r32 Slope = GameState->Slope;
-    r32 Step = GameState->Step;
-    
-#if 0    
-    DrawLine(Buffer, &View, Slope, B, Step, {1.0f, 0.0f, 1.0f}); 
+        int PatternRowAt = 0;
+        int PatternRowsCount = 6;
+        
+        for(int WordsIndex = 0;
+            ((WordsIndex < WordsCount) && 
+             (PatternRowAt < PatternRowsCount));
+            WordsIndex++)
+        {
+            // Match the pattern's row against the guess.
+            // TODO(luca): Check if the guess == the word and skip it otherwise it would end the game.
+            int PatternMatches = 1;
+            char *Guess = &Words[WordsIndex*5];
+            for(int CharIndex = 0;
+                ((CharIndex < WORDLE_LENGTH) &&
+                 (PatternMatches));
+                CharIndex++)
+            {
+                char GuessCh = Guess[CharIndex];
+                int PatternValue = GameState->PatternGrid[PatternRowAt][CharIndex];
+                
+                if(PatternValue == SquareColor_Green)
+                {
+                    PatternMatches = (GuessCh == Word[CharIndex]);
+                }
+                else if(PatternValue == SquareColor_Yellow)
+                {
+                    PatternMatches = 0;
+                    for(int CharAt = 0;
+                        CharAt < WORDLE_LENGTH;
+                        CharAt++)
+                    {
+                        if(Word[CharAt] == GuessCh)
+                        {
+                            if(CharAt != CharIndex)
+                            {
+                                // TODO(luca): Should also check that position does not match.
+                                PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
+                            }
+                            else
+                            {
+                                PatternMatches = 0;
+                            }
+                            
+                            break;
+                        }
+                    }
+                    
+                }
+                // TODO(luca): Have one that can be either yellow/green
+#if 0
+                else if(PatternValue == 1)
+                {
+                    PatternMatches = 0;
+                    for(int CharAt = 0;
+                        CharAt < WORDLE_LENGTH;
+                        CharAt++)
+                    {
+                        if(Word[CharAt] == GuessCh)
+                        {
+                            PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
+                            break;
+                        }
+                    }
+                }
 #endif
-    
-    for(r32 X = -(View.CenterOffset.X + 1);
-        X < (View.CenterOffset.X + 1);
-        X += Step)
-    {
-        r32 Y = 16.0f*Slope*Sin(X + -4*B) + 2*C;
-        DrawPoint(Buffer, &View, v2{X, Y}, color_rgb{1.0f, 0.5f, 0.0f}, {.5, .5});
+                else if(PatternValue == SquareColor_Gray)
+                {
+                    PatternMatches = 1;
+                    for(int CharAt = 0;
+                        CharAt < WORDLE_LENGTH;
+                        CharAt++)
+                    {
+                        if(Word[CharAt] == GuessCh)
+                        {
+                            PatternMatches = 0;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if(PatternMatches)
+            {
+                DrawText(GameState, Buffer, FontScale,
+                         Guess, WORDLE_LENGTH, 
+                         TextOffset, color_rgb{1.0f, 1.0f, 1.0f});
+                TextOffset.Y += YAdvance;
+                
+                WordsIndex = 0;
+                PatternRowAt++;
+            }
+        }
+        
+        //-Display the words
+        
     }
+    
+    
 }
-
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
 {
