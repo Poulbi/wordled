@@ -128,10 +128,10 @@ extern "C" {
     {
         // NOTE(casey): Pixels are alwasy 32-bits wide, Memory Order BB GG RR XX
         void *Memory;
-        int Width;
-        int Height;
-        int Pitch;
-        int BytesPerPixel;
+        s32 Width;
+        s32 Height;
+        s32 Pitch;
+        s32 BytesPerPixel;
     } game_offscreen_buffer;
     
     typedef struct game_sound_output_buffer
@@ -182,6 +182,14 @@ extern "C" {
         };
     } game_controller_input;
     
+    typedef enum
+    {
+        PlatformMouseButton_Left = 0,
+        PlatformMouseButton_Right,
+        PlatformMouseButton_Middle,
+        PlatformMouseButton_Count
+    } platform_mouse_buttons;
+    
     typedef struct game_input
     {
         game_button_state MouseButtons[5];
@@ -191,6 +199,13 @@ extern "C" {
         
         game_controller_input Controllers[5];
     } game_input;
+    
+    inline b32 WasPressed(game_button_state State)
+    {
+        b32 Result = ((State.HalfTransitionCount > 1) || 
+                      (State.HalfTransitionCount == 1 && State.EndedDown));
+        return Result;
+    }
     
     typedef struct game_memory
     {

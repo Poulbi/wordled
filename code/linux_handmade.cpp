@@ -955,9 +955,18 @@ int main(int ArgC, char *Args[])
                         {
                             NewInput->MouseY = MouseY;
                             NewInput->MouseX = MouseX;
-                            NewInput->MouseButtons[0].EndedDown = ((MouseMask & Button1Mask) > 0); 
-                            NewInput->MouseButtons[1].EndedDown = ((MouseMask & Button2Mask) > 0); 
-                            NewInput->MouseButtons[2].EndedDown = ((MouseMask & Button3Mask) > 0); 
+                            
+                            for(u32 ButtonIndex = 0;
+                                ButtonIndex < PlatformMouseButton_Count;
+                                ButtonIndex++)
+                            {
+                                NewInput->MouseButtons[ButtonIndex].EndedDown = OldInput->MouseButtons[ButtonIndex].EndedDown;
+                                NewInput->MouseButtons[ButtonIndex].HalfTransitionCount = 0;
+                            }
+                            
+                            LinuxProcessKeyPress(&NewInput->MouseButtons[PlatformMouseButton_Left], (MouseMask & Button1Mask));
+                            LinuxProcessKeyPress(&NewInput->MouseButtons[PlatformMouseButton_Middle], (MouseMask & Button2Mask));
+                            LinuxProcessKeyPress(&NewInput->MouseButtons[PlatformMouseButton_Right], (MouseMask & Button3Mask));
                         }
                     }
                     
