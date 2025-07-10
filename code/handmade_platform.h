@@ -61,7 +61,6 @@ extern "C" {
     
 #define NullExpression { int X = 4; }
     
-    
 #define Kilobytes(Value) ((Value)*1024LL)
 #define Megabytes(Value) (Kilobytes(Value)*1024LL)
 #define Gigabytes(Value) (Megabytes(Value)*1024LL)
@@ -69,7 +68,6 @@ extern "C" {
     
 #define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
     // TODO(casey): swap, min, max ... macros???
-    
     
     typedef int8_t s8;
     typedef int16_t s16;
@@ -87,7 +85,6 @@ extern "C" {
     typedef float r32;
     typedef double r64;
     
-    
     typedef struct thread_context
     {
         int Placeholder;
@@ -96,7 +93,6 @@ extern "C" {
     /*
       NOTE(casey): Services that the platform layer provides to the game
     */
-#if HANDMADE_INTERNAL
     /* IMPORTANT(casey):
     
        These are NOT for doing anything in the shipping game - they are
@@ -117,7 +113,8 @@ extern "C" {
 #define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) b32 name(thread_context *Thread, char *FileName, u32 MemorySize, void *Memory)
     typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
     
-#endif
+#define PLATFORM_RUN_COMMAND_AND_GET_OUTPUT(name) b32 name(thread_context *Thread, char *OutputBuffer, char *Command[])
+    typedef PLATFORM_RUN_COMMAND_AND_GET_OUTPUT(platform_run_command_and_get_output);
     
     /*
       NOTE(casey): Services that the game provides to the platform layer.
@@ -220,11 +217,10 @@ extern "C" {
         memory_index TransientStorageSize;
         void *TransientStorage; // NOTE(casey): REQUIRED to be cleared to zero at startup
         
-#if HANDMADE_INTERNAL
         debug_platform_free_file_memory *DEBUGPlatformFreeFileMemory;
         debug_platform_read_entire_file *DEBUGPlatformReadEntireFile;
         debug_platform_write_entire_file *DEBUGPlatformWriteEntireFile;
-#endif
+        platform_run_command_and_get_output *PlatformRunCommandAndGetOutput;
     } game_memory;
     
 #define GAME_UPDATE_AND_RENDER(name) void name(thread_context *Thread, game_memory *Memory, game_input *Input, game_offscreen_buffer *Buffer)

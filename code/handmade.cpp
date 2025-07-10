@@ -7,9 +7,9 @@
 #include "libs/stb_truetype.h"
 #endif
 
-#if HANDMADE_INTERNAL
+// TODO(luca): Get rid of these.
+#include <time.h>
 #include <stdio.h>
-#endif
 
 internal s16
 GetSineSound(u32 SampleRate)
@@ -427,6 +427,63 @@ ValidLetterCountInGuess(char *Word, char *Guess, char Letter)
     return Valid;
 }
 
+internal void
+GetTodaysWordle(thread_context *Thread, game_memory *Memory, char *Word)
+{
+    struct tm *LocalTimeNow = 0;
+    time_t Now = 0;
+    time(&Now);
+    LocalTimeNow = localtime(&Now);
+    
+    char URL[] = "https://www.nytimes.com/svc/wordle/v2";
+    char URLBuffer[256] = {0};
+    sprintf(URLBuffer, "%s/%d-%02d-%d.json", URL, 
+            LocalTimeNow->tm_year + 1900, LocalTimeNow->tm_mon + 1, LocalTimeNow->tm_mday);
+    char OutputBuffer[4096] = {0};
+    char *Command[] = {"/usr/bin/curl", "-sL", URLBuffer, 0};
+    
+    int BytesOutputted = Memory->PlatformRunCommandAndGetOutput(Thread, OutputBuffer, Command);
+    int Matches;
+    int MatchedAt = 0;
+    
+    for(int At = 0;
+        At < BytesOutputted;
+        At++)
+    {
+        Matches = true;
+        char ScanMatch[] = "solution";
+        int ScanMatchSize = sizeof(ScanMatch) - 1;
+        for(int ScanAt = 0;
+            ScanAt < ScanMatchSize;
+            ScanAt++)
+        {
+            if((OutputBuffer + At)[ScanAt] != ScanMatch[ScanAt])
+            {
+                Matches = false;
+                break;
+            }
+        }
+        if(Matches)
+        {
+            MatchedAt = At;
+            break;
+        }
+    }
+    if(Matches)
+    {
+        int Start = 0;
+        int End = 0;
+        int Scan = MatchedAt;
+        while(OutputBuffer[Scan++] != '"' && Scan < BytesOutputted);
+        while(OutputBuffer[Scan++] != '"' && Scan < BytesOutputted);
+        Start = Scan;
+        while(OutputBuffer[Scan] != '"' && Scan < BytesOutputted) Scan++;
+        End = Scan;
+        
+        memcpy(Word, OutputBuffer+Start, End-Start);
+    }
+}
+
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
     Assert((&Input->Controllers[0].Terminator - &Input->Controllers[0].Buttons[0]) ==
@@ -438,6 +495,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     if(!Memory->IsInitialized)
     {
         debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/font.ttf");
+        
         if(stbtt_InitFont(&GameState->FontInfo, (u8 *)File.Contents, stbtt_GetFontOffsetForIndex((u8 *)File.Contents, 0)))
         {
             GameState->FontInfo.data = (u8 *)File.Contents;
@@ -456,6 +514,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
         GameState->SelectedColor = SquareColor_Yellow;
         GameState->ExportedPatternIndex = 0;
+        GetTodaysWordle(Thread, Memory, GameState->WordleWord);
         
         Memory->IsInitialized = true;
     }
@@ -585,15 +644,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     TextOffset = v2{16.0f, 16.0f + Baseline};
     
     {
-        char Text[] = "\"jumpy\"";
-        int TextLen = sizeof(Text) - 1;
+        char Text[WORDLE_LENGTH + 2 + 1] = {};
+        int TextLen = sprintf(Text, "\"%s\"", GameState->WordleWord); 
         DrawText(GameState, Buffer, FontScale, Text, TextLen, TextOffset + -v2{8.0f, 0.0f}, ColorYellow);
     }
     
     TextOffset.Y += YAdvance*2.0f;
     
     //-Matche the pattern
-    char *Word = "jumpy";
+    char *Word = GameState->WordleWord;
     debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
     
     int WordsCount = File.ContentsSize / WORDLE_LENGTH;

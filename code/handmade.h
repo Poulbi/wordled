@@ -78,6 +78,7 @@ struct game_state
     u32 PatternGrid[6][5];
     u32 SelectedColor;
     u32 ExportedPatternIndex;
+    char WordleWord[WORDLE_LENGTH];
     
     stbtt_fontinfo FontInfo;
     s32 FontAscent;
