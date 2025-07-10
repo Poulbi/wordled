@@ -76,15 +76,14 @@ struct color_rgb
 struct game_state
 {
     u32 PatternGrid[6][5];
-    
-    u32 SelectedColor;;
+    u32 SelectedColor;
+    u32 ExportedPatternIndex;
     
     stbtt_fontinfo FontInfo;
     s32 FontAscent;
     s32 FontDescent;
     s32 FontLineGap;
     v2 FontBoundingBox[2];
-    
 };
 
 #define HANDMADE_H

@@ -9,7 +9,6 @@
 
 #if HANDMADE_INTERNAL
 #include <stdio.h>
-#define NoOp { int X = 3; }
 #endif
 
 internal s16
@@ -373,7 +372,6 @@ DrawText(game_state *GameState, game_offscreen_buffer *Buffer,
          r32 FontScale,
          char *Text, u32 TextLen, v2 Offset, color_rgb Color)
 {
-    
     for(u32 TextIndex = 0;
         TextIndex < TextLen;
         TextIndex++)
@@ -401,7 +399,6 @@ DrawText(game_state *GameState, game_offscreen_buffer *Buffer,
         Offset.X += (AdvanceWidth*FontScale);
         free(FontBitmap);
     }
-    
 }
 
 internal b32
@@ -440,7 +437,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     
     if(!Memory->IsInitialized)
     {
-        debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "data/font.ttf");
+        debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/font.ttf");
         if(stbtt_InitFont(&GameState->FontInfo, (u8 *)File.Contents, stbtt_GetFontOffsetForIndex((u8 *)File.Contents, 0)))
         {
             GameState->FontInfo.data = (u8 *)File.Contents;
@@ -451,8 +448,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             GameState->FontBoundingBox[0] = v2{(r32)X0, (r32)Y0};
             GameState->FontBoundingBox[1] = v2{(r32)X1, (r32)Y1};
             stbtt_GetFontVMetrics(&GameState->FontInfo, &GameState->FontAscent, &GameState->FontDescent, &GameState->FontLineGap);
-            
-            
         }
         else
         {
@@ -460,6 +455,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
         
         GameState->SelectedColor = SquareColor_Yellow;
+        GameState->ExportedPatternIndex = 0;
         
         Memory->IsInitialized = true;
     }
@@ -471,7 +467,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         game_controller_input *Controller = GetController(Input, ControllerIndex);
         if(Controller->IsConnected)
         {
-            
             if(Controller->IsAnalog)
             {
                 
@@ -483,25 +478,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     GameState->SelectedColor = (GameState->SelectedColor < SquareColor_Count- 1) ?
                         GameState->SelectedColor + 1: 0;
                 }
-                
             }
         }
     }
-    
-    
-    char Text[256] = {};
-    int TextLen = 0;
-    
-    r32 FontScale = 0.0f;
-    r32 YAdvance = 0.0f;
-    r32 Baseline = 0.0f;
-    v2 TextOffset = {};
-    int AdvanceWidth = 0;
-    
     Assert(GameState->SelectedColor < SquareColor_Count);
     
     r32 Width = 48.0f;
-    
     v2 Min = {0.0f, 0.0f};
     v2 Max = {Width, Width};
     v2 Padding = {2.0f, 2.0f};
@@ -509,12 +491,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     color_rgb ColorGray = {0.23f, 0.23f, 0.24f};
     color_rgb ColorYellow = {0.71f, 0.62f, 0.23f};
     color_rgb ColorGreen = {0.32f, 0.55f, 0.31f};
-    
     s32 Rows = 6;
     s32 Columns = 5;
+    
     Base.X = 0.5f*(Buffer->Width - Columns*Width);
     Base.Y = 0.5f*(Buffer->Height - Rows*Width);
-    
     s32 SelectedX = CeilReal32ToInt32((r32)(Input->MouseX - Base.X)/(r32)(Width + Padding.X)) - 1;
     s32 SelectedY = CeilReal32ToInt32((r32)(Input->MouseY - Base.Y)/(r32)(Width + Padding.Y)) - 1;
     
@@ -587,6 +568,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         Min.Y += Padding.Y + Width;
     }
     
+    char Text[256] = {};
+    int TextLen = 0;
+    r32 FontScale = 0.0f;
+    r32 YAdvance = 0.0f;
+    r32 Baseline = 0.0f;
+    v2 TextOffset = {};
+    int AdvanceWidth = 0;
+    
     // Prepare drawing of the guesses.
     FontScale = stbtt_ScaleForPixelHeight(&GameState->FontInfo, 24.0f);
     YAdvance = FontScale*(GameState->FontAscent - 
@@ -596,18 +585,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     TextOffset = v2{16.0f, 16.0f + Baseline};
     
     {
-        char Text[] = "\"novel\"";
+        char Text[] = "\"jumpy\"";
         int TextLen = sizeof(Text) - 1;
-        DrawText(GameState, Buffer, FontScale, Text, TextLen, TextOffset + -v2{8.0f, 0.0f}, ColorGreen);
+        DrawText(GameState, Buffer, FontScale, Text, TextLen, TextOffset + -v2{8.0f, 0.0f}, ColorYellow);
     }
     
     TextOffset.Y += YAdvance*2.0f;
     
-    
     //-Matche the pattern
-    
-    char *Word = "novel";
-    debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "data/words.txt");
+    char *Word = "jumpy";
+    debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
     
     int WordsCount = File.ContentsSize / WORDLE_LENGTH;
     if(File.Contents)
@@ -706,11 +693,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 PatternRowAt++;
             }
         }
-        
-        //-Display the words
-        
     }
     
+    Memory->DEBUGPlatformFreeFileMemory(Thread, File.Contents, File.ContentsSize);
     
 }
 
