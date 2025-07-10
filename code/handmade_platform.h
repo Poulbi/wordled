@@ -59,6 +59,9 @@ extern "C" {
 #define Assert(Expression)
 #endif
     
+#define NullExpression { int X = 4; }
+    
+    
 #define Kilobytes(Value) ((Value)*1024LL)
 #define Megabytes(Value) (Kilobytes(Value)*1024LL)
 #define Gigabytes(Value) (Megabytes(Value)*1024LL)

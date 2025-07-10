@@ -1,1 +1,5 @@
 - Find a better name for 'view'
+
+- Bug: When using 'jolly', the pattern does not work
+- Export: pattern to file
+- Testing

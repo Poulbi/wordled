@@ -329,10 +329,8 @@ internal void LinuxProcessKeyPress(game_button_state *ButtonState, b32 IsDown)
 
 internal void LinuxBeginRecordingInput(linux_state *State, int SlotIndex)
 {
-    char Temp[64];
-    sprintf(Temp, "loop_edit_%d.hmi", SlotIndex);
-    char FileName[PATH_MAX] = {};
-    LinuxBuildFileNameFromExecutable(FileName, State, Temp);
+    char FileName[64];
+    sprintf(FileName, "loop_edit_%d.hmi", SlotIndex);
     
     int File = open(FileName, O_WRONLY|O_CREAT|O_TRUNC|O_APPEND, 0600); 
     if(State->InputRecordingFile != -1)
@@ -376,10 +374,8 @@ internal void LinuxEndRecordingInput(linux_state *State, int SlotIndex)
 
 internal void LinuxBeginInputPlayBack(linux_state *State, int SlotIndex)
 {
-    char Temp[64];
-    sprintf(Temp, "loop_edit_%d.hmi", SlotIndex);
-    char FileName[PATH_MAX] = {};
-    LinuxBuildFileNameFromExecutable(FileName, State, Temp);
+    char FileName[64];
+    sprintf(FileName, "loop_edit_%d.hmi", SlotIndex);
     
     int File = open(FileName, O_RDONLY, 0400);
     if(File != -1)
@@ -723,6 +719,27 @@ void LinuxDebugVerticalLine(game_offscreen_buffer *Buffer, int X, int Y, u32 Col
 
 int main(int ArgC, char *Args[])
 {
+    // NOTE(luca): Change to executable's current directory such that file paths are relative to that in the game code.
+    char *ExePath = Args[0];
+    int Length = StrLen(ExePath);
+    char ExecutableDirPath[Length];
+    int LastSlash = 0;
+    for(int At = 0;
+        At < Length;
+        At++)
+    {
+        if(ExePath[At] == '/')
+        {
+            LastSlash = At;
+        }
+    }
+    MemCpy(ExecutableDirPath, ExePath, LastSlash);
+    ExecutableDirPath[LastSlash] = 0;
+    if(chdir(ExecutableDirPath) == -1)
+    {
+        // TODO(luca): Logging
+    }
+    
     Display *DisplayHandle = XOpenDisplay(0);
     
     if(DisplayHandle)
@@ -774,13 +791,10 @@ int main(int ArgC, char *Args[])
                 XImage *WindowImage = XCreateImage(DisplayHandle, WindowVisualInfo.visual, WindowVisualInfo.depth, ZPixmap, 0, WindowBuffer, Width, Height, BitsPerPixel, 0);
                 GC DefaultGC = DefaultGC(DisplayHandle, Screen);
                 
-                
                 linux_state LinuxState = {};
                 MemCpy(LinuxState.ExecutablePath, Args[0], strlen(Args[0]));
                 
-                char LibraryFullPath[PATH_MAX] = {};
-                char LibraryName[] = "handmade.so";
-                LinuxBuildFileNameFromExecutable(LibraryFullPath, &LinuxState, LibraryName);
+                char LibraryFullPath[] = "handmade.so";
                 linux_game_code Game = LinuxLoadGameCode(LibraryFullPath);
                 Game.LibraryLastWriteTime = LinuxGetLastWriteTime(LibraryFullPath);
                 
@@ -797,7 +811,6 @@ int main(int ArgC, char *Args[])
 #else
                 void *BaseAddress = 0;
 #endif
-                
                 // TODO(casey): TransientStorage needs to be broken into game transient and cache transient
                 LinuxState.TotalSize = GameMemory.PermanentStorageSize + GameMemory.TransientStorageSize;
                 LinuxState.GameMemoryBlock = mmap(BaseAddress, LinuxState.TotalSize, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_SHARED, -1, 0);
