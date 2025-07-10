@@ -1,5 +1,6 @@
-- Find a better name for 'view'
-
-- Bug: When using 'jolly', the pattern does not work
+- Get word asynchronously.
+  - Cache it with timestamp.
 - Export: pattern to file
 - Testing
+  - Bug: When using 'jolly', the pattern does not work
+x Get word of the day with API.

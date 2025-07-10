@@ -1,14 +1,14 @@
 #include <stdio.h>
-#include <time.h>
-#include <x86intrin.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
+#include <x86intrin.h>
 #include <dlfcn.h>
 #include <fcntl.h>
+
 #include <unistd.h>
 #include <dirent.h>
-
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <linux/limits.h>
 #include <linux/input.h>
@@ -629,6 +629,62 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUGPlatformReadEntireFile)
     return Result;
 }
 
+PLATFORM_RUN_COMMAND_AND_GET_OUTPUT(PlatformRunCommandAndGetOutput)
+{
+    int Result = 0;
+    
+    int HandlesLink[2] = {0};
+    int WaitStatus = 0;
+    pid_t ChildPID = 0;
+    int Ret = 0;
+    
+    char *FilePath = Command[0];
+    int AccessMode = F_OK | X_OK;
+    Ret = access(FilePath, AccessMode);
+    
+    if(Ret == 0)
+    {
+        Ret = pipe(HandlesLink);
+        if(Ret != -1)
+        {
+            ChildPID = fork();
+            if(ChildPID != -1)
+            {
+                if(ChildPID == 0)
+                {
+                    dup2(HandlesLink[1], STDOUT_FILENO);
+                    execve(Command[0], Command, 0);
+                }
+                else
+                {
+                    wait(&WaitStatus);
+                    
+                    Result = read(HandlesLink[0], OutputBuffer, 4096);
+                    if(Result == -1)
+                    {
+                        Result = 0;
+                    }
+                }
+                
+            }
+            else
+            {
+                // TODO: Logging
+            }
+        }
+        else
+        {
+            // TODO: Logging
+        }
+    }
+    else
+    {
+        // TODO: Logging
+    }
+    
+    return Result;
+}
+
 DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUGPlatformFreeFileMemory)
 {
     munmap(Memory, MemorySize);
@@ -754,7 +810,9 @@ int main(int ArgC, char *Args[])
         {
             XSetWindowAttributes WindowAttributes = {};
             WindowAttributes.bit_gravity = StaticGravity;
+#if HANDMADE_INTERNAL            
             WindowAttributes.background_pixel = 0xFF00FF;
+#endif
             WindowAttributes.colormap = XCreateColormap(DisplayHandle, RootWindow, WindowVisualInfo.visual, AllocNone);
             WindowAttributes.event_mask = (StructureNotifyMask | 
                                            KeyPressMask | KeyReleaseMask |
@@ -805,6 +863,7 @@ int main(int ArgC, char *Args[])
                 GameMemory.DEBUGPlatformReadEntireFile = DEBUGPlatformReadEntireFile;
                 GameMemory.DEBUGPlatformFreeFileMemory = DEBUGPlatformFreeFileMemory;
                 GameMemory.DEBUGPlatformWriteEntireFile = DEBUGPlatformWriteEntireFile;
+                GameMemory.PlatformRunCommandAndGetOutput = PlatformRunCommandAndGetOutput;
                 
 #if HANDMADE_INTERNAL
                 void *BaseAddress = (void *)Terabytes(2);
