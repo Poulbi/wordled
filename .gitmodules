@@ -1,0 +1,3 @@
+[submodule "code/libs/linuxhmh"]
+	path = code/libs/linuxhmh
+	url = git@autumn:linuxhmh

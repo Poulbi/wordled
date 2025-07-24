@@ -7,7 +7,7 @@
    $Notice: (C) Copyright 2014 by Molly Rocket, Inc. All Rights Reserved. $
    ======================================================================== */
 
-#include "handmade_platform.h"
+#include "libs/linuxhmh/handmade_platform.h"
 #include "handmade_math.h"
 
 #include "libs/stb_truetype.h"

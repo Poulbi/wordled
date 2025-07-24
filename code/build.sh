@@ -12,4 +12,4 @@ printf 'handmade.cpp\n'
 g++ $CompilerFlags $WarningFlags -shared -o ../build/handmade.so handmade.cpp
 
 printf 'linux_handmade.cpp\n'
-g++ $CompilerFlags $WarningFlags -o ../build/linux_handmade linux_handmade.cpp -lasound -lm -lX11 -lXfixes
+g++ $CompilerFlags $WarningFlags -o ../build/linux_handmade libs/linuxhmh/linux_handmade.cpp -lasound -lm -lX11 -lXfixes
