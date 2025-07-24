@@ -355,13 +355,19 @@ DrawCharacter(game_offscreen_buffer *Buffer,  u8 *FontBitmap,
             X < MaxX;
             X++)
         {
-            
             u8 Brightness = FontBitmap[Y*FontWidth+X];
-            u32 Value = ((0xFF << 24) |
-                         ((u32)(Color.R*Brightness) << 16) |
-                         ((u32)(Color.G*Brightness) << 8) |
-                         ((u32)(Color.B*Brightness) << 0));
-            *Pixel++ = Value;
+            if(Brightness > 0)
+            {
+                u32 Value = ((0xFF << 24) |
+                             ((u32)(Color.R*Brightness) << 16) |
+                             ((u32)(Color.G*Brightness) << 8) |
+                             ((u32)(Color.B*Brightness) << 0));
+                *Pixel++ = Value;
+            }
+            else
+            {
+                Pixel++;
+            }
         }
         Row += Buffer->Pitch;
     }
@@ -370,17 +376,17 @@ DrawCharacter(game_offscreen_buffer *Buffer,  u8 *FontBitmap,
 internal void
 DrawText(game_state *GameState, game_offscreen_buffer *Buffer, 
          r32 FontScale,
-         char *Text, u32 TextLen, v2 Offset, color_rgb Color)
+         rune *Text, u32 TextLen, v2 Offset, color_rgb Color)
 {
     for(u32 TextIndex = 0;
         TextIndex < TextLen;
         TextIndex++)
     {
-        int CharAt = Text[TextIndex];
+        rune CharAt = Text[TextIndex];
         
-        int FontWidth, FontHeight;
-        int AdvanceWidth, LeftSideBearing;
-        int X0, Y0, X1, Y1;
+        s32 FontWidth, FontHeight;
+        s32 AdvanceWidth, LeftSideBearing;
+        s32 X0, Y0, X1, Y1;
         u8 *FontBitmap = 0;
         // TODO(luca): Get rid of malloc.
         FontBitmap = stbtt_GetCodepointBitmap(&GameState->FontInfo, 
@@ -440,8 +446,16 @@ GetTodaysWordle(thread_context *Thread, game_memory *Memory, char *Word)
     sprintf(URLBuffer, "%s/%d-%02d-%d.json", URL, 
             LocalTimeNow->tm_year + 1900, LocalTimeNow->tm_mon + 1, LocalTimeNow->tm_mday);
     char OutputBuffer[4096] = {0};
-    char *Command[] = {"/usr/bin/curl", "-sL", URLBuffer, 0};
+    char *Command[] = 
+    {
+        "/usr/bin/curl", 
+        "--silent", 
+        "--location", 
+        "--max-time", "10",
+        URLBuffer, 0
+    };
     
+    // TODO(luca): This should be asynchronous at least because in the case of no internet the application would not even start.
     int BytesOutputted = Memory->PlatformRunCommandAndGetOutput(Thread, OutputBuffer, Command);
     int Matches;
     int MatchedAt = 0;
@@ -484,6 +498,15 @@ GetTodaysWordle(thread_context *Thread, game_memory *Memory, char *Word)
     }
 }
 
+internal void 
+AppendCharToInputText(game_state *GameState, rune Codepoint)
+{
+    if(GameState->TextInputCount < ArrayCount(GameState->TextInputText))
+    {
+        GameState->TextInputText[GameState->TextInputCount++] = Codepoint;
+    }
+}
+
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
     Assert((&Input->Controllers[0].Terminator - &Input->Controllers[0].Buttons[0]) ==
@@ -514,7 +537,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
         GameState->SelectedColor = SquareColor_Yellow;
         GameState->ExportedPatternIndex = 0;
+        
+#if 0        
         GetTodaysWordle(Thread, Memory, GameState->WordleWord);
+#else
+        char *Word = "sword";
+        for(u32 Count = 0; Count < 5; Count++)
+        {
+            GameState->WordleWord[Count] = Word[Count];
+        }
+#endif
+        
+        GameState->TextInputCount = 0;
+        GameState->TextInputMode = true;
         
         Memory->IsInitialized = true;
     }
@@ -532,14 +567,34 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
             else
             {
-                if(WasPressed(Input->MouseButtons[PlatformMouseButton_Right]))
+                Assert(Controller->Keyboard.TextInputCount < ArrayCount(Controller->Keyboard.TextInputBuffer));
+                for(u32 InputIndex = 0;
+                    InputIndex < Controller->Keyboard.TextInputCount;
+                    InputIndex++)
+                {
+                    rune Codepoint = Controller->Keyboard.TextInputBuffer[InputIndex].Codepoint;
+                    AppendCharToInputText(GameState, Codepoint);
+                }
+                
+                if(WasPressed(Controller->ActionUp))
                 {
                     GameState->SelectedColor = (GameState->SelectedColor < SquareColor_Count- 1) ?
-                        GameState->SelectedColor + 1: 0;
+                        GameState->SelectedColor + 1 : 0;
                 }
+                if(WasPressed(Controller->ActionDown))
+                {
+                    GameState->SelectedColor = (GameState->SelectedColor > 0) ?
+                        GameState->SelectedColor - 1 : SquareColor_Count - 1;
+                }
+                if(WasPressed(Controller->ActionLeft))
+                {
+                    GameState->TextInputMode = !GameState->TextInputMode;
+                }
+                
             }
         }
     }
+    
     Assert(GameState->SelectedColor < SquareColor_Count);
     
     r32 Width = 48.0f;
@@ -641,13 +696,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                           GameState->FontDescent + 
                           GameState->FontLineGap);
     Baseline = (GameState->FontAscent*FontScale);
+    
     TextOffset = v2{16.0f, 16.0f + Baseline};
     
+#if 0    
     {
         char Text[WORDLE_LENGTH + 2 + 1] = {};
-        int TextLen = sprintf(Text, "\"%s\"", GameState->WordleWord); 
+        s32 TextLen = sprintf(Text, "\"%s\"", GameState->WordleWord); 
         DrawText(GameState, Buffer, FontScale, Text, TextLen, TextOffset + -v2{8.0f, 0.0f}, ColorYellow);
     }
+#endif
     
     TextOffset.Y += YAdvance*2.0f;
     
@@ -743,9 +801,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             
             if(PatternMatches)
             {
+#if 0
                 DrawText(GameState, Buffer, FontScale,
                          Guess, WORDLE_LENGTH, 
                          TextOffset, color_rgb{1.0f, 1.0f, 1.0f});
+#endif
+                
                 TextOffset.Y += YAdvance;
                 
                 WordsIndex = 0;
@@ -755,6 +816,47 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     }
     
     Memory->DEBUGPlatformFreeFileMemory(Thread, File.Contents, File.ContentsSize);
+    
+    // NOTE(luca): Debug code for drawing inputted text.
+#if 1
+    {
+        r32 FontScale = stbtt_ScaleForPixelHeight(&GameState->FontInfo, 20.0f);
+        color_rgb Color = {1.0f, 0.0f, 0.5f};
+        v2 Offset = {100.0f, 30.0f};
+        
+        r32 TextHeight = FontScale*(GameState->FontAscent - 
+                                    GameState->FontDescent + 
+                                    GameState->FontLineGap);
+        r32 TextWidth = 0;
+        for(u32 InputIndex = 0;
+            InputIndex < GameState->TextInputCount;
+            InputIndex++)
+        {
+            int AdvanceWidth, LeftSideBearing;
+            rune Codepoint = GameState->TextInputText[InputIndex];
+            stbtt_GetCodepointHMetrics(&GameState->FontInfo, Codepoint,
+                                       &AdvanceWidth, &LeftSideBearing);
+            TextWidth += (AdvanceWidth)*FontScale;
+        }
+        
+        r32 Baseline = (GameState->FontAscent*FontScale);
+        
+        v2 Min = {Offset.X, Offset.Y - Baseline};
+        v2 Max = {Offset.X + TextWidth, Min.Y + TextHeight};
+        color_rgb ColorWhite = {1.0f, 1.0f, 1.0f};
+        color_rgb ColorBlue = {0.2f, 0.0f, 1.0f};
+        
+        DrawRectangle(Buffer, Min + -1, Max + 1, ColorBlue);
+        DrawRectangle(Buffer, Min, Max, ColorWhite);
+        
+        DrawText(GameState, Buffer, FontScale,
+                 GameState->TextInputText, GameState->TextInputCount, 
+                 Offset, Color);
+        
+        Assert(GameState->TextInputCount < ArrayCount(GameState->TextInputText));
+    }
+    
+#endif
     
 }
 

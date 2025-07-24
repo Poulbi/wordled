@@ -85,6 +85,11 @@ struct game_state
     s32 FontDescent;
     s32 FontLineGap;
     v2 FontBoundingBox[2];
+    
+    b32 TextInputMode;
+    rune TextInputText[256];
+    u32 TextInputCount;
+    
 };
 
 #define HANDMADE_H

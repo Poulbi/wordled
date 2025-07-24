@@ -21,9 +21,12 @@
 #include "handmade_platform.h"
 #include "linux_handmade.h"
 
+#include "x11_keysym_convert.c"
+
 #define true 1
 #define false 0
 
+#define ALSA_RECOVER_SILENT true
 #define MAX_PLAYER_COUNT 4
 
 #ifdef Assert
@@ -45,7 +48,6 @@ global_variable b32 GlobalPaused;
 void MemCpy(char *Dest, char *Source, size_t Count)
 {
     while(Count--) *Dest++ = *Source++;
-    
 }
 
 void MemSet(char *Dest, char Value, size_t Count)
@@ -79,6 +81,47 @@ void CatStrings(size_t SourceACount, char *SourceA,
     {
         *Dest++ = *SourceB++;
     }
+}
+
+internal rune
+ConvertUTF8StringToRune(u8 UTF8String[4])
+{
+    rune Codepoint = 0;
+    
+    if((UTF8String[0] & 0x80) == 0x00)
+    {
+        Codepoint = UTF8String[0];
+    }
+    else if((UTF8String[0] & 0xE0) == 0xC0)
+    {
+        Codepoint = (
+                     ((UTF8String[0] & 0x1F) << 6*1) |
+                     ((UTF8String[1] & 0x3F) << 6*0)
+                     );
+    }
+    else if((UTF8String[0] & 0xF0) == 0xE0)
+    {
+        Codepoint = (
+                     ((UTF8String[0] & 0x0F) << 6*2) |
+                     ((UTF8String[1] & 0x3F) << 6*1) |
+                     ((UTF8String[2] & 0x3F) << 6*0)
+                     );
+    }
+    else if((UTF8String[0] & 0xF8) == 0xF8)
+    {
+        Codepoint = (
+                     ((UTF8String[0] & 0x0E) << 6*3) |
+                     ((UTF8String[1] & 0x3F) << 6*2) |
+                     ((UTF8String[2] & 0x3F) << 6*1) |
+                     ((UTF8String[3] & 0x3F) << 6*0)
+                     );
+    }
+    else
+    {
+        Assert(0);
+    }
+    
+    return Codepoint;
 }
 
 struct linux_init_alsa_result
@@ -414,7 +457,6 @@ internal void LinuxEndInputPlayBack(linux_state *State)
     }
     
     State->InputPlayingIndex = 0;
-    
 }
 
 internal void LinuxRecordInput(linux_state *State, game_input *Input)
@@ -466,19 +508,123 @@ internal void LinuxShowCursor(Display *DisplayHandle, Window WindowHandle)
 }
 
 internal void LinuxProcessPendingMessages(Display *DisplayHandle, Window WindowHandle,
-                                          Atom WM_DELETE_WINDOW, linux_state *State, game_controller_input *KeyboardController)
+                                          XIC InputContext, Atom WM_DELETE_WINDOW, linux_state *State, game_controller_input *KeyboardController)
 {
     XEvent WindowEvent = {};
     while(XPending(DisplayHandle) > 0)
     {
         XNextEvent(DisplayHandle, &WindowEvent);
-        switch (WindowEvent.type)
+        b32 FilteredEvent = XFilterEvent(&WindowEvent, WindowHandle);
+        if(FilteredEvent)
+        {
+            Assert(WindowEvent.type == KeyPress || WindowEvent.type == KeyRelease);
+        }
+        
+        switch(WindowEvent.type)
         {
             case KeyPress:
             case KeyRelease:
             {
+                //- How text input works 
+                // The needs:
+                //  1. Preserve game buttons, so that we can switch between a "game mode" or 
+                //     "text input mode".
+                //  2. Text input using the input method of the user which should allow for utf8 characters.
+                //  3. Hotkey support.  Eg. quickly navigating text.
+                // 3 will be supported by 2 for code reuse.
+                //
+                // We are going to send a buffer text button presses to the game layer, this solves these
+                // issues:
+                // - Pressing the same key multiple times in one frame.
+                // - Having modifiers be specific to each key press.
+                // - Not having to create a button record for each possible character in the structure.
+                // - Key events come in one at a time in the event loop, thus we need to have a buffer for
+                //   multiple keys pressed on a single frame.
+                //
+                // We store a count along the buffer and in the buffer we store the utf8 codepoint and its
+                // modifiers.
+                // The app code is responsible for traversing this buffer and applying the logic. 
+                
+                // The problem of input methods and hotkeys: 
+                // Basically the problem is that if we allow the input method and combo's that could be 
+                // filtered by the input method it won't seem consistent to the user.
+                // So we don't allow key bound to the input method to have an effect and we only pass key
+                // inputs that have not been filtered.
+                //
+                // In the platform layer we handle the special case were the input methods creates non-
+                // printable characters and we decompose those key inputs since non-printable characters
+                // have no use anymore.
+                
+                // Extra:
+                // - I refuse to check which keys bind to what modifiers. It's not important.
+                
+                // - Handy resources: 
+                //   - https://www.coderstool.com/unicode-text-converter
+                //   - man Compose(5).
+                //   - https://en.wikipedia.org/wiki/Control_key#History
+                
                 KeySym Symbol = XLookupKeysym(&WindowEvent.xkey, 0);
                 b32 IsDown = (WindowEvent.type == KeyPress);
+                
+                // TODO(luca): Refresh mappings.
+                // NOTE(luca): Only KeyPress events  see man page of Xutf8LookupString().  And skip filtered events for text input, but keep them for controller.
+                if(IsDown && !FilteredEvent)
+                {
+                    rune Codepoint = 'e';
+                    u8 LookupBuffer[4] = {};
+                    Status LookupStatus = {};
+                    
+                    s32 BytesLookepdUp = Xutf8LookupString(InputContext, &WindowEvent.xkey, 
+                                                           (char *)&LookupBuffer, ArrayCount(LookupBuffer), 
+                                                           0, &LookupStatus);
+                    Assert(LookupStatus != XBufferOverflow);
+                    Assert(BytesLookepdUp <= 4);
+                    
+                    if(LookupStatus!= XLookupNone &&
+                       LookupStatus!= XLookupKeySym)
+                    {
+                        if(BytesLookepdUp)
+                        {
+                            Assert(KeyboardController->Keyboard.TextInputCount < ArrayCount(KeyboardController->Keyboard.TextInputBuffer));
+                            
+                            Codepoint = ConvertUTF8StringToRune(LookupBuffer);
+                            
+                            // NOTE(luca): Input methods might produce non printable characters (< ' ').  If this
+                            // happens we try to "decompose" the key input.
+                            if(Codepoint < ' ' && Codepoint >= 0)
+                            {
+                                if(Symbol >= XK_space)
+                                {
+                                    Codepoint = (char)(' ' + (Symbol - XK_space));
+                                }
+                            }
+                            
+                            
+                            if(Codepoint >= ' ' || Codepoint < 0)
+                            {                            
+                                game_text_button *TextButton = &KeyboardController->Keyboard.TextInputBuffer[KeyboardController->Keyboard.TextInputCount++];
+                                TextButton->Codepoint = Codepoint;
+                                TextButton->Shift   = (WindowEvent.xkey.state & ShiftMask);
+                                TextButton->Control = (WindowEvent.xkey.state & ControlMask);
+                                TextButton->Alt     = (WindowEvent.xkey.state & Mod1Mask);
+#if 0                           
+                                printf("%d bytes '%c' %d (%c|%c|%c)\n", 
+                                       BytesLookepdUp, 
+                                       ((Codepoint >= ' ') ? (char)Codepoint : '\0'),
+                                       Codepoint,
+                                       ((WindowEvent.xkey.state & ShiftMask)   ? 'S' : ' '),
+                                       ((WindowEvent.xkey.state & ControlMask) ? 'C' : ' '),
+                                       ((WindowEvent.xkey.state & Mod1Mask)    ? 'A' : ' '));
+#endif
+                            }
+                            else
+                            {
+                                // TODO(luca): Logging
+                            }
+                            
+                        }
+                    }
+                }
                 
                 if(0) {}
                 else if(Symbol == XK_w)
@@ -517,14 +663,16 @@ internal void LinuxProcessPendingMessages(Display *DisplayHandle, Window WindowH
                 {
                     LinuxProcessKeyPress(&KeyboardController->Start, IsDown);
                 }
-                else if(Symbol == XK_p)
+                else if((WindowEvent.xkey.state & Mod1Mask) &&
+                        (Symbol == XK_p))
                 {
                     if(IsDown)
                     {
                         GlobalPaused = !GlobalPaused;
                     }
                 }
-                else if(Symbol == XK_l)
+                else if((WindowEvent.xkey.state & Mod1Mask) &&
+                        (Symbol == XK_l))
                 {
                     if(IsDown)
                     {
@@ -542,7 +690,8 @@ internal void LinuxProcessPendingMessages(Display *DisplayHandle, Window WindowH
                         }
                         else
                         {
-                            // TODO(luca): Reset buttons so they aren't held?
+                            // NOTE(luca) Reset buttons so they aren't held.
+                            // TODO(luca): Check if still needed since we clear halftransition counts.
                             for(u32 ButtonIndex = 0;
                                 ButtonIndex < ArrayCount(KeyboardController->Buttons);
                                 ButtonIndex++)
@@ -553,8 +702,8 @@ internal void LinuxProcessPendingMessages(Display *DisplayHandle, Window WindowH
                         }
                     }
                 }
-                else if(Symbol == XK_Escape ||
-                        Symbol == XK_q)
+                else if((WindowEvent.xkey.state & Mod1Mask) && 
+                        (Symbol == XK_F4))
                 {
                     GlobalRunning = false;
                 }
@@ -588,11 +737,8 @@ internal void LinuxProcessPendingMessages(Display *DisplayHandle, Window WindowH
             {
                 //LinuxShowCursor(DisplayHandle, WindowHandle);
             } break;
-            
         }
-        
     }
-    
 }
 
 internal void LinuxSetSizeHint(Display *DisplayHandle, Window WindowHandle,
@@ -841,6 +987,20 @@ int main(int ArgC, char *Args[])
                 ClassHint.res_class = "Handmade Window";
                 XSetClassHint(DisplayHandle, WindowHandle, &ClassHint);
                 
+                XSetLocaleModifiers("");
+                
+                XIM InputMethod = XOpenIM(DisplayHandle, 0, 0, 0);
+                if(!InputMethod){
+                    XSetLocaleModifiers("@im=none");
+                    InputMethod = XOpenIM(DisplayHandle, 0, 0, 0);
+                }
+                XIC InputContext = XCreateIC(InputMethod,
+                                             XNInputStyle, XIMPreeditNothing | XIMStatusNothing,
+                                             XNClientWindow, WindowHandle,
+                                             XNFocusWindow,  WindowHandle,
+                                             NULL);
+                XSetICFocus(InputContext);
+                
                 int BitsPerPixel = 32;
                 int BytesPerPixel = BitsPerPixel/8;
                 int WindowBufferSize = Width*Height*BytesPerPixel;
@@ -990,7 +1150,7 @@ int main(int ArgC, char *Args[])
                 {
                     NewInput->dtForFrame = TargetSecondsPerFrame;
                     
-#if HANDMADE_INTERNAL
+#if HANDMADE_SLOW
                     // NOTE(luca): Because gcc will first create an empty file and then write into it we skip trying to reload when the file is empty.
                     struct stat FileStats = {};
                     stat(LibraryFullPath, &FileStats);
@@ -1010,7 +1170,16 @@ int main(int ArgC, char *Args[])
                     game_controller_input *NewKeyboardController = GetController(NewInput, 0);
                     NewKeyboardController->IsConnected = true;
                     
-                    LinuxProcessPendingMessages(DisplayHandle, WindowHandle, WM_DELETE_WINDOW, &LinuxState, NewKeyboardController);
+                    NewKeyboardController->Keyboard.TextInputCount = 0;
+                    for(u32 ButtonIndex = 0;
+                        ButtonIndex < ArrayCount(NewKeyboardController->Buttons);
+                        ButtonIndex++)
+                    {
+                        NewKeyboardController->Buttons[ButtonIndex].HalfTransitionCount = 0;
+                    }
+                    
+                    LinuxProcessPendingMessages(DisplayHandle, WindowHandle, InputContext, WM_DELETE_WINDOW,
+                                                &LinuxState, NewKeyboardController);
                     
                     // TODO(luca): Use buttonpress/release events instead so we query this less frequently.
                     s32 MouseX = 0, MouseY = 0, MouseZ = 0; // TODO(luca): Support mousewheel?
@@ -1127,7 +1296,6 @@ int main(int ArgC, char *Args[])
 #endif
                                     }
                                 }
-                                
                             }
                         }
                     }
@@ -1229,7 +1397,7 @@ TODO
                         {
                             // TODO(luca): Logging
                             // NOTE(luca): We might want to silence in case of overruns ahead of time.  We also probably want to handle latency differently here. 
-                            snd_pcm_recover(PCMHandle, LastFramesWritten, 0);
+                            snd_pcm_recover(PCMHandle, LastFramesWritten, ALSA_RECOVER_SILENT);
                             
                             // underrun
                             if(LastFramesWritten == -EPIPE)
