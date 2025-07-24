@@ -81,6 +81,7 @@ extern "C" {
     typedef uint64_t u64;
     
     typedef size_t memory_index;
+    typedef s32 rune;
     
     typedef float r32;
     typedef double r64;
@@ -141,6 +142,14 @@ extern "C" {
         s16 *Samples;
     } game_sound_output_buffer;
     
+    typedef struct game_text_button
+    {
+        rune Codepoint;
+        b32 Control;
+        b32 Shift;
+        b32 Alt;
+    } game_text_button;
+    
     typedef struct game_button_state
     {
         int HalfTransitionCount;
@@ -150,6 +159,15 @@ extern "C" {
     typedef struct game_controller_input
     {
         b32 IsConnected;
+        
+        struct 
+        {
+            u32 TextInputCount;
+            game_text_button TextInputBuffer[64];
+            
+            // TODO(luca): Generate code for keys that are not characters like Return, Backspace, etc. 
+        } Keyboard;
+        
         b32 IsAnalog;    
         r32 StickAverageX;
         r32 StickAverageY;
@@ -192,7 +210,7 @@ extern "C" {
     
     typedef struct game_input
     {
-        game_button_state MouseButtons[5];
+        game_button_state MouseButtons[PlatformMouseButton_Count];
         s32 MouseX, MouseY, MouseZ;
         
         r32 dtForFrame;
