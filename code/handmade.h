@@ -16,9 +16,9 @@
 
 typedef enum
 {
-    SquareColor_Gray = 0,
-    SquareColor_Yellow = 1,
-    SquareColor_Green = 2,
+    SquareColor_Gray,
+    SquareColor_Yellow,
+    SquareColor_Green,
     SquareColor_Count
 } square_colors;
 
