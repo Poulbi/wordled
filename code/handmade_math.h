@@ -69,6 +69,14 @@ operator-(v2 A, v2 B)
 }
 
 inline v2
+operator-(v2 A, r32 B)
+{
+    v2 Result;
+    Result = A + -B;
+    return Result;
+}
+
+inline v2
 operator*(r32 A, v2 B)
 {
     v2 Result;

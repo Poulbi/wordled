@@ -3,6 +3,10 @@
 #ifndef HANDMADE_INTRINSICS_H
 #define HANDMADE_INTRINSICS_H
 
+#if HANDMADE_SLOW
+#undef COMPILER_GNU
+#endif
+
 #if COMPILER_GNU
 #include <x86intrin.h>
 #endif

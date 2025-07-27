@@ -507,6 +507,22 @@ AppendCharToInputText(game_state *GameState, rune Codepoint)
     }
 }
 
+internal color_rgb
+GetColorRGBForColorIndex(u32 Index)
+{
+    color_rgb Color = {};
+    color_rgb ColorGray = {0.23f, 0.23f, 0.24f};
+    color_rgb ColorYellow = {0.71f, 0.62f, 0.23f};
+    color_rgb ColorGreen = {0.32f, 0.55f, 0.31f};
+    
+    if(0) {}
+    else if(Index == SquareColor_Gray)   Color = ColorGray;
+    else if(Index == SquareColor_Yellow) Color = ColorYellow;
+    else if(Index == SquareColor_Green)  Color = ColorGreen;
+    
+    return Color;
+}
+
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
     Assert((&Input->Controllers[0].Terminator - &Input->Controllers[0].Buttons[0]) ==
@@ -576,15 +592,19 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     AppendCharToInputText(GameState, Codepoint);
                 }
                 
-                if(WasPressed(Controller->ActionUp))
+                if(WasPressed(Input->MouseButtons[PlatformMouseButton_ScrollUp]))
                 {
-                    GameState->SelectedColor = (GameState->SelectedColor < SquareColor_Count- 1) ?
-                        GameState->SelectedColor + 1 : 0;
+                    u32 ColorIndex = GameState->SelectedColor;
+                    GameState->SelectedColor = ((ColorIndex > 0) ? 
+                                                (ColorIndex - 1) : 
+                                                (SquareColor_Count - 1));
                 }
-                if(WasPressed(Controller->ActionDown))
+                if(WasPressed(Input->MouseButtons[PlatformMouseButton_ScrollDown]))
                 {
-                    GameState->SelectedColor = (GameState->SelectedColor > 0) ?
-                        GameState->SelectedColor - 1 : SquareColor_Count - 1;
+                    u32 ColorIndex = GameState->SelectedColor;
+                    GameState->SelectedColor = ((ColorIndex + 1 < SquareColor_Count) ?
+                                                (ColorIndex + 1) :
+                                                (0));
                 }
                 if(WasPressed(Controller->ActionLeft))
                 {
@@ -598,13 +618,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     Assert(GameState->SelectedColor < SquareColor_Count);
     
     r32 Width = 48.0f;
-    v2 Min = {0.0f, 0.0f};
-    v2 Max = {Width, Width};
+    v2 Min = {};
+    v2 Max = {};
     v2 Padding = {2.0f, 2.0f};
     v2 Base = {0.0f, 0.0f};
-    color_rgb ColorGray = {0.23f, 0.23f, 0.24f};
-    color_rgb ColorYellow = {0.71f, 0.62f, 0.23f};
-    color_rgb ColorGreen = {0.32f, 0.55f, 0.31f};
     s32 Rows = 6;
     s32 Columns = 5;
     
@@ -613,8 +630,32 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     s32 SelectedX = CeilReal32ToInt32((r32)(Input->MouseX - Base.X)/(r32)(Width + Padding.X)) - 1;
     s32 SelectedY = CeilReal32ToInt32((r32)(Input->MouseY - Base.Y)/(r32)(Width + Padding.Y)) - 1;
     
-    Min.X = Base.X;
-    Min.Y = Base.Y;
+    {    
+        r32 WheelWidth = Width * 0.66f;
+        v2 BorderWidth = Padding;
+        Min = v2{Base.X, Base.Y - Width};
+        for(u32 ColorIndex = 0;
+            ColorIndex < SquareColor_Count;
+            ColorIndex++)
+        {
+            Max = Min + WheelWidth;
+            color_rgb Color = GetColorRGBForColorIndex(ColorIndex);
+            
+            if(ColorIndex == GameState->SelectedColor)
+            {
+                r32 Gray = 0.7f; 
+                DrawRectangle(Buffer, Min, Max, color_rgb{Gray, Gray, Gray});
+            }
+            
+            DrawRectangle(Buffer, 
+                          Min + BorderWidth, Max - BorderWidth,
+                          Color);
+            
+            Min.X += Padding.X + WheelWidth;
+        }
+    }
+    
+    Min = Base;
     for(s32 Y = 0;
         Y < Rows;
         Y++)
@@ -630,26 +671,11 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             if((X == SelectedX) &&
                (Y == SelectedY))
             {
-                
                 if(Input->MouseButtons[PlatformMouseButton_Left].EndedDown)
                 {
                     GameState->PatternGrid[Y][X] = GameState->SelectedColor;
                 }
-                
-                if(0) {}
-                else if(GameState->SelectedColor == 0)
-                {
-                    Color = ColorGray;
-                }
-                else if(GameState->SelectedColor == 1)
-                {
-                    Color = ColorYellow;
-                }
-                else if(GameState->SelectedColor == 2)
-                {
-                    Color = ColorGreen;
-                }
-                
+                Color = GetColorRGBForColorIndex(GameState->SelectedColor);
                 DrawRectangle(Buffer, Min, Max, color_rgb{0.0f, 0.0f, 0.0f});
                 DrawRectangle(Buffer, 
                               Min + Padding, Max - Padding,
@@ -658,20 +684,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             else
             {
                 u32 PatternValue = GameState->PatternGrid[Y][X];
-                if(0) {}
-                else if(PatternValue == SquareColor_Gray)
-                {
-                    Color = ColorGray;
-                }
-                else if(PatternValue == SquareColor_Yellow)
-                {
-                    Color = ColorYellow;
-                }
-                else if(PatternValue == SquareColor_Green)
-                {
-                    Color = ColorGreen;
-                }
-                
+                Color = GetColorRGBForColorIndex(PatternValue);
                 DrawRectangle(Buffer, Min, Max, Color);
             }
             
