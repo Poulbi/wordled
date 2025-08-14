@@ -2,14 +2,13 @@
 #include "handmade_random.h"
 #include "handmade_graph.cpp"
 
-#if 1
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "libs/stb_truetype.h"
-#endif
 
 // TODO(luca): Get rid of these.
 #include <time.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 internal s16
 GetSineSound(u32 SampleRate)
@@ -356,19 +355,23 @@ DrawCharacter(game_offscreen_buffer *Buffer,  u8 *FontBitmap,
             X++)
         {
             u8 Brightness = FontBitmap[Y*FontWidth+X];
-            if(Brightness > 0)
-            {
-                u32 Value = ((0xFF << 24) |
-                             ((u32)(Color.R*Brightness) << 16) |
-                             ((u32)(Color.G*Brightness) << 8) |
-                             ((u32)(Color.B*Brightness) << 0));
-                *Pixel++ = Value;
-            }
-            else
-            {
-                Pixel++;
-            }
+            r32 Alpha = ((r32)Brightness/255.0f);
+            
+            r32 DR = (r32)((*Pixel >> 16) & 0xFF);
+            r32 DG = (r32)((*Pixel >> 8) & 0xFF);
+            r32 DB = (r32)((*Pixel >> 0) & 0xFF);
+            
+            r32 R = Color.R*255.0f*Alpha + DR*(1-Alpha);
+            r32 G = Color.G*255.0f*Alpha + DG*(1-Alpha);
+            r32 B = Color.B*255.0f*Alpha +  DB*(1-Alpha);
+            
+            u32 Value = ((0xFF << 24) |
+                         ((u32)(R) << 16) |
+                         ((u32)(G) << 8) |
+                         ((u32)(B) << 0));
+            *Pixel++ = Value;
         }
+        
         Row += Buffer->Pitch;
     }
 }
@@ -494,7 +497,7 @@ GetTodaysWordle(thread_context *Thread, game_memory *Memory, char *Word)
         while(OutputBuffer[Scan] != '"' && Scan < BytesOutputted) Scan++;
         End = Scan;
         
-        memcpy(Word, OutputBuffer+Start, End-Start);
+        MemCpy(Word, OutputBuffer+Start, End-Start);
     }
 }
 
@@ -588,8 +591,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     InputIndex < Controller->Keyboard.TextInputCount;
                     InputIndex++)
                 {
-                    rune Codepoint = Controller->Keyboard.TextInputBuffer[InputIndex].Codepoint;
-                    AppendCharToInputText(GameState, Codepoint);
+                    game_text_button Button = Controller->Keyboard.TextInputBuffer[InputIndex];
+                    if(0) {}
+                    else if(Button.Codepoint == 'u' && Button.Control)
+                    {
+                        GameState->TextInputCount = 0;
+                    }
+                    else if(Button.Codepoint == 'd' && Button.Control)
+                    {
+                        if(GameState->TextInputCount)
+                        {
+                            GameState->TextInputCount--;
+                        }
+                    }
+                    else
+                    {
+                        AppendCharToInputText(GameState, Button.Codepoint);
+                    }
+                    
                 }
                 
                 if(WasPressed(Input->MouseButtons[PlatformMouseButton_ScrollUp]))
@@ -834,7 +853,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if 1
     {
         r32 FontScale = stbtt_ScaleForPixelHeight(&GameState->FontInfo, 20.0f);
-        color_rgb Color = {1.0f, 0.0f, 0.5f};
+        
         v2 Offset = {100.0f, 30.0f};
         
         r32 TextHeight = FontScale*(GameState->FontAscent - 
@@ -856,21 +875,21 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
         v2 Min = {Offset.X, Offset.Y - Baseline};
         v2 Max = {Offset.X + TextWidth, Min.Y + TextHeight};
-        color_rgb ColorWhite = {1.0f, 1.0f, 1.0f};
-        color_rgb ColorBlue = {0.2f, 0.0f, 1.0f};
+        color_rgb ColorBorder = {0.017f, 0.017f, 0.017f};
+        color_rgb ColorBG = {0.007f, 0.007f, 0.007f};
+        color_rgb ColorFG = {0.682f, 0.545f, 0.384f};
         
-        DrawRectangle(Buffer, Min + -1, Max + 1, ColorBlue);
-        DrawRectangle(Buffer, Min, Max, ColorWhite);
+        DrawRectangle(Buffer, Min + -1, Max + 1, ColorBorder);
+        DrawRectangle(Buffer, Min, Max, ColorBG);
         
         DrawText(GameState, Buffer, FontScale,
                  GameState->TextInputText, GameState->TextInputCount, 
-                 Offset, Color);
+                 Offset, ColorFG);
         
         Assert(GameState->TextInputCount < ArrayCount(GameState->TextInputText));
     }
     
 #endif
-    
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

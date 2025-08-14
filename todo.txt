@@ -3,4 +3,7 @@
 - Export: pattern to file
 - Testing
   - Bug: When using 'jolly', the pattern does not work
+
+- A mode where you can scroll through the word list and it shows you patterns to pick from
+
 x Get word of the day with API.
