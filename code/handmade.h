@@ -10,6 +10,7 @@
 #include "libs/linuxhmh/handmade_platform.h"
 #include "handmade_math.h"
 
+#undef STB_TRUETYPE_IMPLEMENTATION
 #include "libs/stb_truetype.h"
 
 #define WORDLE_LENGTH 5
