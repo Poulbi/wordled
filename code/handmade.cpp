@@ -377,10 +377,12 @@ DrawCharacter(game_offscreen_buffer *Buffer,  u8 *FontBitmap,
 }
 
 internal void
-DrawText(game_state *GameState, game_offscreen_buffer *Buffer, 
+DrawText(game_font *Font, game_offscreen_buffer *Buffer, 
          r32 FontScale,
          rune *Text, u32 TextLen, v2 Offset, color_rgb Color)
 {
+    Assert(Font->Initialized);
+    
     for(u32 TextIndex = 0;
         TextIndex < TextLen;
         TextIndex++)
@@ -392,15 +394,55 @@ DrawText(game_state *GameState, game_offscreen_buffer *Buffer,
         s32 X0, Y0, X1, Y1;
         u8 *FontBitmap = 0;
         // TODO(luca): Get rid of malloc.
-        FontBitmap = stbtt_GetCodepointBitmap(&GameState->FontInfo, 
+        FontBitmap = stbtt_GetCodepointBitmap(&Font->Info, 
                                               FontScale, FontScale, 
                                               CharAt, 
                                               &FontWidth, &FontHeight, 0, 0);
-        stbtt_GetCodepointBitmapBox(&GameState->FontInfo, CharAt, 
+        stbtt_GetCodepointBitmapBox(&Font->Info, CharAt, 
                                     FontScale, FontScale, 
                                     &X0, &Y0, &X1, &Y1);
         r32 YOffset = Offset.Y + Y0;
-        stbtt_GetCodepointHMetrics(&GameState->FontInfo, CharAt, &AdvanceWidth, &LeftSideBearing);
+        stbtt_GetCodepointHMetrics(&Font->Info, CharAt, &AdvanceWidth, &LeftSideBearing);
+        r32 XOffset = Offset.X + LeftSideBearing*FontScale;
+        
+        DrawCharacter(Buffer, FontBitmap, FontWidth, FontHeight, XOffset, YOffset, Color);
+        
+        Offset.X += (AdvanceWidth*FontScale);
+        free(FontBitmap);
+    }
+}
+
+internal void
+DrawTextWithAlternatingFonts(game_font *Font1, game_font *Font2,
+                             game_offscreen_buffer *Buffer, 
+                             r32 FontScale,
+                             rune *Text, u32 TextLen, v2 Offset, color_rgb Color)
+{
+    b32 FontToggle = false;
+    for(u32 TextIndex = 0;
+        TextIndex < TextLen;
+        TextIndex++)
+    {
+        FontToggle = !FontToggle;
+        game_font *Font = (FontToggle) ? Font1 : Font2;
+        Assert(Font->Initialized);
+        
+        rune CharAt = Text[TextIndex];
+        
+        s32 FontWidth, FontHeight;
+        s32 AdvanceWidth, LeftSideBearing;
+        s32 X0, Y0, X1, Y1;
+        u8 *FontBitmap = 0;
+        // TODO(luca): Get rid of malloc.
+        FontBitmap = stbtt_GetCodepointBitmap(&Font->Info, 
+                                              FontScale, FontScale, 
+                                              CharAt, 
+                                              &FontWidth, &FontHeight, 0, 0);
+        stbtt_GetCodepointBitmapBox(&Font->Info, CharAt, 
+                                    FontScale, FontScale, 
+                                    &X0, &Y0, &X1, &Y1);
+        r32 YOffset = Offset.Y + Y0;
+        stbtt_GetCodepointHMetrics(&Font->Info, CharAt, &AdvanceWidth, &LeftSideBearing);
         r32 XOffset = Offset.X + LeftSideBearing*FontScale;
         
         DrawCharacter(Buffer, FontBitmap, FontWidth, FontHeight, XOffset, YOffset, Color);
@@ -526,6 +568,35 @@ GetColorRGBForColorIndex(u32 Index)
     return Color;
 }
 
+internal void
+InitFont(thread_context *Thread, game_font *Font, game_memory *Memory, char *FilePath)
+{
+    debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, FilePath);
+    
+    if(File.Contents)
+    {
+        if(stbtt_InitFont(&Font->Info, (u8 *)File.Contents, stbtt_GetFontOffsetForIndex((u8 *)File.Contents, 0)))
+        {
+            Font->Info.data = (u8 *)File.Contents;
+            
+            s32 X0, Y0, X1, Y1;
+            stbtt_GetFontBoundingBox(&Font->Info, &X0, &Y0, &X1, &Y1);
+            Font->BoundingBox[0] = v2{(r32)X0, (r32)Y0};
+            Font->BoundingBox[1] = v2{(r32)X1, (r32)Y1};
+            stbtt_GetFontVMetrics(&Font->Info, &Font->Ascent, &Font->Descent, &Font->LineGap);
+            Font->Initialized = true;
+        }
+        else
+        {
+            // TODO(luca): Logging
+        }
+    }
+    else
+    {
+        // TODO(luca): Logging
+    }
+}
+
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
     Assert((&Input->Controllers[0].Terminator - &Input->Controllers[0].Buttons[0]) ==
@@ -536,23 +607,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     
     if(!Memory->IsInitialized)
     {
-        debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/font.ttf");
-        
-        if(stbtt_InitFont(&GameState->FontInfo, (u8 *)File.Contents, stbtt_GetFontOffsetForIndex((u8 *)File.Contents, 0)))
-        {
-            GameState->FontInfo.data = (u8 *)File.Contents;
-            
-            int X0, Y0, X1, Y1;
-            v2 BoundingBox[2] = {};
-            stbtt_GetFontBoundingBox(&GameState->FontInfo, &X0, &Y0, &X1, &Y1);
-            GameState->FontBoundingBox[0] = v2{(r32)X0, (r32)Y0};
-            GameState->FontBoundingBox[1] = v2{(r32)X1, (r32)Y1};
-            stbtt_GetFontVMetrics(&GameState->FontInfo, &GameState->FontAscent, &GameState->FontDescent, &GameState->FontLineGap);
-        }
-        else
-        {
-            // TODO(luca): Logging
-        }
+        InitFont(Thread, &GameState->RegularFont, Memory, "../data/fonts/jetbrains_mono_regular.ttf");
+        InitFont(Thread, &GameState->ItalicFont, Memory, "../data/fonts/jetbrains_mono_italic.ttf");
+        InitFont(Thread, &GameState->BoldFont, Memory, "../data/fonts/jetbrains_mono_bold.ttf");
         
         GameState->SelectedColor = SquareColor_Yellow;
         GameState->ExportedPatternIndex = 0;
@@ -625,6 +682,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                                 (ColorIndex + 1) :
                                                 (0));
                 }
+                
                 if(WasPressed(Controller->ActionLeft))
                 {
                     GameState->TextInputMode = !GameState->TextInputMode;
@@ -722,12 +780,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     v2 TextOffset = {};
     int AdvanceWidth = 0;
     
+    game_font DefaultFont = GameState->RegularFont;
+    
     // Prepare drawing of the guesses.
-    FontScale = stbtt_ScaleForPixelHeight(&GameState->FontInfo, 24.0f);
-    YAdvance = FontScale*(GameState->FontAscent - 
-                          GameState->FontDescent + 
-                          GameState->FontLineGap);
-    Baseline = (GameState->FontAscent*FontScale);
+    FontScale = stbtt_ScaleForPixelHeight(&DefaultFont.Info, 24.0f);
+    YAdvance = FontScale*(DefaultFont.Ascent - 
+                          DefaultFont.Descent + 
+                          DefaultFont.LineGap);
+    Baseline = (DefaultFont.Ascent*FontScale);
     
     TextOffset = v2{16.0f, 16.0f + Baseline};
     
@@ -743,12 +803,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     
     //-Matche the pattern
     char *Word = GameState->WordleWord;
-    debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
+    debug_read_file_result WordsFile = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
     
-    int WordsCount = File.ContentsSize / WORDLE_LENGTH;
-    if(File.Contents)
+    int WordsCount = WordsFile.ContentsSize / WORDLE_LENGTH;
+    if(WordsFile.Contents)
     {
-        char *Words = (char *)File.Contents;
+        char *Words = (char *)WordsFile.Contents;
         
         int PatternRowAt = 0;
         int PatternRowsCount = 6;
@@ -847,18 +907,18 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
     
-    Memory->DEBUGPlatformFreeFileMemory(Thread, File.Contents, File.ContentsSize);
+    Memory->DEBUGPlatformFreeFileMemory(Thread, WordsFile.Contents, WordsFile.ContentsSize);
     
     // NOTE(luca): Debug code for drawing inputted text.
 #if 1
     {
-        r32 FontScale = stbtt_ScaleForPixelHeight(&GameState->FontInfo, 20.0f);
+        r32 FontScale = stbtt_ScaleForPixelHeight(&DefaultFont.Info, 20.0f);
         
         v2 Offset = {100.0f, 30.0f};
         
-        r32 TextHeight = FontScale*(GameState->FontAscent - 
-                                    GameState->FontDescent + 
-                                    GameState->FontLineGap);
+        r32 TextHeight = FontScale*(DefaultFont.Ascent - 
+                                    DefaultFont.Descent + 
+                                    DefaultFont.LineGap);
         r32 TextWidth = 0;
         for(u32 InputIndex = 0;
             InputIndex < GameState->TextInputCount;
@@ -866,12 +926,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         {
             int AdvanceWidth, LeftSideBearing;
             rune Codepoint = GameState->TextInputText[InputIndex];
-            stbtt_GetCodepointHMetrics(&GameState->FontInfo, Codepoint,
+            stbtt_GetCodepointHMetrics(&DefaultFont.Info, Codepoint,
                                        &AdvanceWidth, &LeftSideBearing);
             TextWidth += (AdvanceWidth)*FontScale;
         }
         
-        r32 Baseline = (GameState->FontAscent*FontScale);
+        r32 Baseline = (DefaultFont.Ascent*FontScale);
         
         v2 Min = {Offset.X, Offset.Y - Baseline};
         v2 Max = {Offset.X + TextWidth, Min.Y + TextHeight};
@@ -882,14 +942,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         DrawRectangle(Buffer, Min + -1, Max + 1, ColorBorder);
         DrawRectangle(Buffer, Min, Max, ColorBG);
         
-        DrawText(GameState, Buffer, FontScale,
+        DrawText(&DefaultFont, Buffer, FontScale,
                  GameState->TextInputText, GameState->TextInputCount, 
                  Offset, ColorFG);
         
         Assert(GameState->TextInputCount < ArrayCount(GameState->TextInputText));
     }
-    
 #endif
+    
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
