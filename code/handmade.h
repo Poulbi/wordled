@@ -74,6 +74,16 @@ struct color_rgb
     };
 };
 
+struct game_font
+{
+    stbtt_fontinfo Info;
+    s32 Ascent;
+    s32 Descent;
+    s32 LineGap;
+    v2 BoundingBox[2];
+    b32 Initialized; // For debugging.
+};
+
 struct game_state
 {
     u32 PatternGrid[6][5];
@@ -81,16 +91,13 @@ struct game_state
     u32 ExportedPatternIndex;
     char WordleWord[WORDLE_LENGTH];
     
-    stbtt_fontinfo FontInfo;
-    s32 FontAscent;
-    s32 FontDescent;
-    s32 FontLineGap;
-    v2 FontBoundingBox[2];
+    game_font RegularFont;
+    game_font ItalicFont;
+    game_font BoldFont;
     
     b32 TextInputMode;
     rune TextInputText[256];
     u32 TextInputCount;
-    
 };
 
 #define HANDMADE_H

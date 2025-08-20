@@ -19,6 +19,7 @@ CompilerFlags="
 
 WarningFlags="-Wall
 -Wextra
+-Wno-sign-compare
 -Wno-unused-but-set-variable
 -Wno-unused-variable
 -Wno-write-strings
@@ -32,7 +33,7 @@ ClangCompilerFlags="
 ClangWarningFlags="
 -Wno-null-dereference
 -Wno-missing-braces
--Wno-vla-cxx-extension
+-Wno-vla-extension
 -Wno-writable-strings
 "
 
