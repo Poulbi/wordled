@@ -15,13 +15,13 @@
 
 #define WORDLE_LENGTH 5
 
-typedef enum
+enum square_colors
 {
     SquareColor_Gray,
     SquareColor_Yellow,
     SquareColor_Green,
     SquareColor_Count
-} square_colors;
+};
 
 struct memory_arena
 {
@@ -74,6 +74,64 @@ struct color_rgb
     };
 };
 
+#define Max(A, B) (((A) > (B)) ? (A) : (B))
+#define Min(A, B) (((A) < (B)) ? (A) : (B))
+#define Clamp(A, B, C) (Max((A), Min((B), (C))))
+
+inline color_rgb
+operator*(color_rgb A, r32 B)
+{
+    color_rgb Result;
+    
+    Result.R = A.R * B;
+    Result.G = A.G * B;
+    Result.B = A.B * B;
+    
+    return Result;
+}
+
+inline color_rgb
+operator*(r32 A, color_rgb B)
+{
+    color_rgb Result = B*A;
+    
+    return Result;
+}
+
+inline color_rgb
+operator+(color_rgb A, r32 B)
+{
+    color_rgb Result;
+    
+    Result.R = A.R + B;
+    Result.G = A.G + B;
+    Result.B = A.B + B;
+    
+    return Result;
+}
+
+inline color_rgb
+operator+(r32 A, color_rgb B)
+{
+    color_rgb Result = B+A;
+    
+    return Result;
+}
+
+inline color_rgb
+operator-(color_rgb A)
+{
+    color_rgb Result;
+    
+    Result.R = -A.R;
+    Result.G = -A.G;
+    Result.B = -A.B;
+    
+    return Result;
+}
+
+#define color_rgb(A) color_rgb{(A), (A), (A)}
+
 struct game_font
 {
     stbtt_fontinfo Info;
@@ -96,7 +154,7 @@ struct game_state
     game_font BoldFont;
     
     b32 TextInputMode;
-    rune TextInputText[256];
+    rune TextInputText[5];
     u32 TextInputCount;
 };
 

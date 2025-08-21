@@ -649,17 +649,31 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     InputIndex++)
                 {
                     game_text_button Button = Controller->Keyboard.TextInputBuffer[InputIndex];
+                    
+                    // TODO(luca): Check that Codepoint is not shrunk because that would cause inequal value to still be equal if the shrunk part is equal. 
+                    
+                    u32 *InputCount = &GameState->TextInputCount;
+                    
                     if(0) {}
                     else if(Button.Codepoint == 'u' && Button.Control)
                     {
-                        GameState->TextInputCount = 0;
+                        *InputCount = 0;
                     }
-                    else if(Button.Codepoint == 'd' && Button.Control)
+                    else if(Button.Codepoint == 'h' && Button.Control)
                     {
-                        if(GameState->TextInputCount)
+                        if(*InputCount)
                         {
-                            GameState->TextInputCount--;
+                            *InputCount -= 1;
                         }
+                    }
+                    else if(Button.Codepoint == 'w' && Button.Control)
+                    {
+                        while(*InputCount && GameState->TextInputText[*InputCount - 1] == ' ') *InputCount -= 1;
+                        while(*InputCount && GameState->TextInputText[*InputCount - 1] != ' ') *InputCount -= 1;
+                    }
+                    else if(Button.Control || Button.Alt)
+                    {
+                        // These can only be shortcuts so since they aren't implemented these will be skipped.
                     }
                     else
                     {
@@ -671,16 +685,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 if(WasPressed(Input->MouseButtons[PlatformMouseButton_ScrollUp]))
                 {
                     u32 ColorIndex = GameState->SelectedColor;
-                    GameState->SelectedColor = ((ColorIndex > 0) ? 
-                                                (ColorIndex - 1) : 
-                                                (SquareColor_Count - 1));
+                    if(ColorIndex) ColorIndex--;
+                    GameState->SelectedColor = ColorIndex;
                 }
                 if(WasPressed(Input->MouseButtons[PlatformMouseButton_ScrollDown]))
                 {
                     u32 ColorIndex = GameState->SelectedColor;
-                    GameState->SelectedColor = ((ColorIndex + 1 < SquareColor_Count) ?
-                                                (ColorIndex + 1) :
-                                                (0));
+                    if(ColorIndex + 1 < SquareColor_Count) ColorIndex++;
+                    GameState->SelectedColor = ColorIndex;
                 }
                 
                 if(WasPressed(Controller->ActionLeft))
@@ -691,85 +703,113 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
         }
     }
-    
     Assert(GameState->SelectedColor < SquareColor_Count);
     
-    r32 Width = 48.0f;
-    v2 Min = {};
-    v2 Max = {};
-    v2 Padding = {2.0f, 2.0f};
-    v2 Base = {0.0f, 0.0f};
-    s32 Rows = 6;
-    s32 Columns = 5;
-    
-    Base.X = 0.5f*(Buffer->Width - Columns*Width);
-    Base.Y = 0.5f*(Buffer->Height - Rows*Width);
-    s32 SelectedX = CeilReal32ToInt32((r32)(Input->MouseX - Base.X)/(r32)(Width + Padding.X)) - 1;
-    s32 SelectedY = CeilReal32ToInt32((r32)(Input->MouseY - Base.Y)/(r32)(Width + Padding.Y)) - 1;
-    
-    {    
-        r32 WheelWidth = Width * 0.66f;
-        v2 BorderWidth = Padding;
-        Min = v2{Base.X, Base.Y - Width};
-        for(u32 ColorIndex = 0;
-            ColorIndex < SquareColor_Count;
-            ColorIndex++)
+    // Draw wordle rectangles
+    r32 WordleRectWidth = 48.0f;
+    s32 WordleRectsRows = 6;
+    s32 WordleRectsColumns = 5;
+    v2 WordleRectsBase = 0.5f*v2{
+        Buffer->Width - WordleRectsColumns*WordleRectWidth, 
+        Buffer->Height - WordleRectsRows*WordleRectWidth
+    };
+    v2 WordleRectsPadding = {2.0f, 2.0f};
+    {
+        r32 Width = WordleRectWidth;
+        v2 Base = WordleRectsBase;
+        s32 Rows = WordleRectsRows;
+        s32 Columns = WordleRectsColumns;
+        
+        v2 Padding = WordleRectsPadding;
+        
+        s32 SelectedX = CeilReal32ToInt32((r32)(Input->MouseX - Base.X)/(r32)(Width + Padding.X)) - 1;
+        s32 SelectedY = CeilReal32ToInt32((r32)(Input->MouseY - Base.Y)/(r32)(Width + Padding.Y)) - 1;
+        
+        v2 vMin = {};
+        v2 vMax = {};
+        
+        vMin = Base;
+        for(s32 Y = 0;
+            Y < Rows;
+            Y++)
         {
-            Max = Min + WheelWidth;
-            color_rgb Color = GetColorRGBForColorIndex(ColorIndex);
-            
-            if(ColorIndex == GameState->SelectedColor)
+            for(s32 X = 0;
+                X < Columns;
+                X++)
             {
-                r32 Gray = 0.7f; 
-                DrawRectangle(Buffer, Min, Max, color_rgb{Gray, Gray, Gray});
+                color_rgb Color = {1.0f, 1.0f, 0.0f};
+                
+                vMax = vMin + Width;
+                
+                if((X == SelectedX) &&
+                   (Y == SelectedY))
+                {
+                    if(Input->MouseButtons[PlatformMouseButton_Left].EndedDown)
+                    {
+                        GameState->PatternGrid[Y][X] = GameState->SelectedColor;
+                    }
+                    Color = GetColorRGBForColorIndex(GameState->SelectedColor);
+                    DrawRectangle(Buffer, vMin, vMax, color_rgb(0.0f));
+                    DrawRectangle(Buffer, 
+                                  vMin + Padding, vMax - Padding,
+                                  Color);
+                }
+                else
+                {
+                    u32 PatternValue = GameState->PatternGrid[Y][X];
+                    Color = GetColorRGBForColorIndex(PatternValue);
+                    DrawRectangle(Buffer, vMin, vMax, Color);
+                }
+                
+                
+                vMin.X += Padding.X + Width;
             }
-            
-            DrawRectangle(Buffer, 
-                          Min + BorderWidth, Max - BorderWidth,
-                          Color);
-            
-            Min.X += Padding.X + WheelWidth;
+            vMin.X = Base.X;
+            vMin.Y += Padding.Y + Width;
         }
     }
     
-    Min = Base;
-    for(s32 Y = 0;
-        Y < Rows;
-        Y++)
+    // Selected color wheel
     {
-        for(s32 X = 0;
-            X < Columns;
-            X++)
+        v2 Padding = WordleRectsPadding;
+        v2 SelectedBorder = WordleRectsPadding*1;
+        v2 Base = WordleRectsBase;
+        r32 Width = 0.5f*WordleRectWidth;
+        color_rgb BorderColor = color_rgb(0.7f);
+        color_rgb SelectedBorderColor = color_rgb(0.7f);
+        
+        Base.X -= (Width + Padding.X + SelectedBorder.X)+ Width ;
+        Base.Y += SelectedBorder.Y;
+        
+        // Draw Background
         {
-            color_rgb Color = {1.0f, 1.0f, 0.0f};
-            
-            Max = Min + Width;
-            
-            if((X == SelectedX) &&
-               (Y == SelectedY))
-            {
-                if(Input->MouseButtons[PlatformMouseButton_Left].EndedDown)
-                {
-                    GameState->PatternGrid[Y][X] = GameState->SelectedColor;
-                }
-                Color = GetColorRGBForColorIndex(GameState->SelectedColor);
-                DrawRectangle(Buffer, Min, Max, color_rgb{0.0f, 0.0f, 0.0f});
-                DrawRectangle(Buffer, 
-                              Min + Padding, Max - Padding,
-                              Color);
-            }
-            else
-            {
-                u32 PatternValue = GameState->PatternGrid[Y][X];
-                Color = GetColorRGBForColorIndex(PatternValue);
-                DrawRectangle(Buffer, Min, Max, Color);
-            }
-            
-            
-            Min.X += Padding.X + Width;
+            v2 vMin = Base - Padding;
+            v2 vMax = Base + Width + Padding;
+            vMax.Y += (Width + Padding.Y + SelectedBorder.Y)*(SquareColor_Count - 1);
+            DrawRectangle(Buffer, vMin, vMax, color_rgb(0.2f));
         }
-        Min.X = Base.X;
-        Min.Y += Padding.Y + Width;
+        
+        // Draw color rectangle
+        {        
+            v2 vMin = Base;
+            for(s32 ColorIndex = 0;
+                ColorIndex < SquareColor_Count;
+                ColorIndex++)
+            {
+                color_rgb Color = GetColorRGBForColorIndex(ColorIndex);
+                
+                
+                if(GameState->SelectedColor == ColorIndex)
+                {
+                    DrawRectangle(Buffer, vMin, vMin + Width, 1.2f*Color);
+                }
+                
+                DrawRectangle(Buffer, vMin + SelectedBorder, vMin + Width - SelectedBorder, Color);
+                
+                vMin.Y += Width + Padding.Y + SelectedBorder.X;
+            }
+        }
+        
     }
     
     char Text[256] = {};
@@ -896,7 +936,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 #if 0
                 DrawText(GameState, Buffer, FontScale,
                          Guess, WORDLE_LENGTH, 
-                         TextOffset, color_rgb{1.0f, 1.0f, 1.0f});
+                         TextOffset, color_rgb(1.0f));
 #endif
                 
                 TextOffset.Y += YAdvance;
@@ -933,14 +973,27 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
         r32 Baseline = (DefaultFont.Ascent*FontScale);
         
-        v2 Min = {Offset.X, Offset.Y - Baseline};
-        v2 Max = {Offset.X + TextWidth, Min.Y + TextHeight};
-        color_rgb ColorBorder = {0.017f, 0.017f, 0.017f};
+        color_rgb ColorBorder = color_rgb(1.0f);
         color_rgb ColorBG = {0.007f, 0.007f, 0.007f};
         color_rgb ColorFG = {0.682f, 0.545f, 0.384f};
         
-        DrawRectangle(Buffer, Min + -1, Max + 1, ColorBorder);
-        DrawRectangle(Buffer, Min, Max, ColorBG);
+        r32 CursorWidth = 7.0f;
+        r32 CursorHeight = TextHeight;
+        
+        // Draw text box
+        {        
+            v2 vMin = {Offset.X, Offset.Y - Baseline};
+            v2 vMax = {Offset.X + TextWidth + CursorWidth, vMin.Y + TextHeight};
+            DrawRectangle(Buffer, vMin + -2, vMax + 2, ColorBorder);
+            DrawRectangle(Buffer, vMin + -1, vMax + 1, ColorBG);
+        }
+        
+        // Draw cursor
+        {
+            v2 vMin = {Offset.X + TextWidth, Offset.Y - Baseline};
+            v2 vMax = {vMin.X + CursorWidth, vMin.Y + TextHeight};
+            DrawRectangle(Buffer, vMin, vMax, ColorFG);
+        }
         
         DrawText(&DefaultFont, Buffer, FontScale,
                  GameState->TextInputText, GameState->TextInputCount, 
