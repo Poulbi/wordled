@@ -377,9 +377,8 @@ DrawCharacter(game_offscreen_buffer *Buffer,  u8 *FontBitmap,
 }
 
 internal void
-DrawText(game_font *Font, game_offscreen_buffer *Buffer, 
-         r32 FontScale,
-         rune *Text, u32 TextLen, v2 Offset, color_rgb Color)
+DrawText(game_offscreen_buffer *Buffer, game_font *Font, r32 FontScale,
+         u32 TextLen, u8 *Text, v2 Offset, color_rgb Color, b32 IsUTF8)
 {
     Assert(Font->Initialized);
     
@@ -387,7 +386,15 @@ DrawText(game_font *Font, game_offscreen_buffer *Buffer,
         TextIndex < TextLen;
         TextIndex++)
     {
-        rune CharAt = Text[TextIndex];
+        rune CharAt = 0;
+        if(IsUTF8)
+        {
+            CharAt = *(((rune *)Text) + TextIndex);
+        }
+        else
+        {
+            CharAt = Text[TextIndex];
+        }
         
         s32 FontWidth, FontHeight;
         s32 AdvanceWidth, LeftSideBearing;
@@ -453,7 +460,7 @@ DrawTextWithAlternatingFonts(game_font *Font1, game_font *Font2,
 }
 
 internal b32
-ValidLetterCountInGuess(char *Word, char *Guess, char Letter)
+ValidLetterCountInGuess(rune *Word, u8 *Guess, rune Letter)
 {
     b32 Valid = false;
     
@@ -614,6 +621,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->SelectedColor = SquareColor_Yellow;
         GameState->ExportedPatternIndex = 0;
         
+        // TODO(luca): Better GetTodaysWordle function using libcurl.
 #if 0        
         GetTodaysWordle(Thread, Memory, GameState->WordleWord);
 #else
@@ -643,12 +651,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             }
             else
             {
-                Assert(Controller->Keyboard.TextInputCount < ArrayCount(Controller->Keyboard.TextInputBuffer));
+                Assert(Controller->Text.Count < ArrayCount(Controller->Text.Buffer));
+                
+                
+                // TODO(luca): This should use the minimum in case where there are more keys in the Keyboard.TextInputBuffer than in GameState->TextInputText
                 for(u32 InputIndex = 0;
-                    InputIndex < Controller->Keyboard.TextInputCount;
+                    InputIndex < Controller->Text.Count;
                     InputIndex++)
                 {
-                    game_text_button Button = Controller->Keyboard.TextInputBuffer[InputIndex];
+                    game_text_button Button = Controller->Text.Buffer[InputIndex];
                     
                     // TODO(luca): Check that Codepoint is not shrunk because that would cause inequal value to still be equal if the shrunk part is equal. 
                     
@@ -666,8 +677,10 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                             *InputCount -= 1;
                         }
                     }
-                    else if(Button.Codepoint == 'w' && Button.Control)
+                    else if((Button.Codepoint == 'w' && Button.Control) ||
+                            (Button.Codepoint == '\b' && Button.Control))
                     {
+                        // Delete a word.
                         while(*InputCount && GameState->TextInputText[*InputCount - 1] == ' ') *InputCount -= 1;
                         while(*InputCount && GameState->TextInputText[*InputCount - 1] != ' ') *InputCount -= 1;
                     }
@@ -675,9 +688,41 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     {
                         // These can only be shortcuts so since they aren't implemented these will be skipped.
                     }
+                    else if(Button.Codepoint == '\b')
+                    {
+                        if(*InputCount)
+                        {
+                            *InputCount -= 1;
+                        }
+                    }
+                    else if(Button.Codepoint == '\n' ||
+                            Button.Codepoint == '\r')
+                    {
+                        printf("Test\n");
+                        
+                        for(u32 InputIndex = 0;
+                            InputIndex < ArrayCount(GameState->WordleWord);
+                            InputIndex++)
+                        {
+                            if(InputIndex < GameState->TextInputCount)
+                            {
+                                GameState->WordleWord[InputIndex] = (GameState->TextInputText[InputIndex]);
+                            }
+                            else
+                            {
+                                GameState->WordleWord[InputIndex] = ' ';
+                            }
+                        }
+                        // ???
+                    }
                     else
                     {
-                        AppendCharToInputText(GameState, Button.Codepoint);
+                        // Only allow characters the Wordle game would allow.
+                        
+                        if((Button.Codepoint >= 'a' && Button.Codepoint <= 'z') || Button.Codepoint == ' ')
+                        {
+                            AppendCharToInputText(GameState, Button.Codepoint);
+                        }
                     }
                     
                 }
@@ -831,44 +876,40 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     
     TextOffset = v2{16.0f, 16.0f + Baseline};
     
-#if 0    
-    {
-        char Text[WORDLE_LENGTH + 2 + 1] = {};
-        s32 TextLen = sprintf(Text, "\"%s\"", GameState->WordleWord); 
-        DrawText(GameState, Buffer, FontScale, Text, TextLen, TextOffset + -v2{8.0f, 0.0f}, ColorYellow);
-    }
-#endif
+    DrawText(Buffer, &DefaultFont, FontScale, 
+             ArrayCount(GameState->WordleWord), (u8 *)GameState->WordleWord,
+             TextOffset + -v2{8.0f, 0.0f}, color_rgb(1.0f), true);
     
     TextOffset.Y += YAdvance*2.0f;
     
     //-Matche the pattern
-    char *Word = GameState->WordleWord;
+    rune *Word = GameState->WordleWord;
     debug_read_file_result WordsFile = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
     
     int WordsCount = WordsFile.ContentsSize / WORDLE_LENGTH;
     if(WordsFile.Contents)
     {
-        char *Words = (char *)WordsFile.Contents;
+        u8 *Words = (u8 *)WordsFile.Contents;
         
-        int PatternRowAt = 0;
-        int PatternRowsCount = 6;
+        s32 PatternRowAt = 0;
+        s32 PatternRowsCount = 6;
         
-        for(int WordsIndex = 0;
+        for(s32 WordsIndex = 0;
             ((WordsIndex < WordsCount) && 
              (PatternRowAt < PatternRowsCount));
             WordsIndex++)
         {
             // Match the pattern's row against the guess.
             // TODO(luca): Check if the guess == the word and skip it otherwise it would end the game.
-            int PatternMatches = 1;
-            char *Guess = &Words[WordsIndex*5];
-            for(int CharIndex = 0;
+            s32 PatternMatches = 1;
+            u8 *Guess = &Words[WordsIndex*(WORDLE_LENGTH+1)];
+            for(s32 CharIndex = 0;
                 ((CharIndex < WORDLE_LENGTH) &&
                  (PatternMatches));
                 CharIndex++)
             {
-                char GuessCh = Guess[CharIndex];
-                int PatternValue = GameState->PatternGrid[PatternRowAt][CharIndex];
+                u8 GuessCh = Guess[CharIndex];
+                s32 PatternValue = GameState->PatternGrid[PatternRowAt][CharIndex];
                 
                 if(PatternValue == SquareColor_Green)
                 {
@@ -877,7 +918,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 else if(PatternValue == SquareColor_Yellow)
                 {
                     PatternMatches = 0;
-                    for(int CharAt = 0;
+                    for(s32 CharAt = 0;
                         CharAt < WORDLE_LENGTH;
                         CharAt++)
                     {
@@ -903,7 +944,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 else if(PatternValue == 1)
                 {
                     PatternMatches = 0;
-                    for(int CharAt = 0;
+                    for(s32 CharAt = 0;
                         CharAt < WORDLE_LENGTH;
                         CharAt++)
                     {
@@ -918,7 +959,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 else if(PatternValue == SquareColor_Gray)
                 {
                     PatternMatches = 1;
-                    for(int CharAt = 0;
+                    for(s32 CharAt = 0;
                         CharAt < WORDLE_LENGTH;
                         CharAt++)
                     {
@@ -933,11 +974,9 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             
             if(PatternMatches)
             {
-#if 0
-                DrawText(GameState, Buffer, FontScale,
-                         Guess, WORDLE_LENGTH, 
-                         TextOffset, color_rgb(1.0f));
-#endif
+                DrawText(Buffer, &DefaultFont, FontScale,
+                         WORDLE_LENGTH, Guess, 
+                         TextOffset, color_rgb(1.0f), false);
                 
                 TextOffset.Y += YAdvance;
                 
@@ -964,7 +1003,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             InputIndex < GameState->TextInputCount;
             InputIndex++)
         {
-            int AdvanceWidth, LeftSideBearing;
+            s32 AdvanceWidth, LeftSideBearing;
             rune Codepoint = GameState->TextInputText[InputIndex];
             stbtt_GetCodepointHMetrics(&DefaultFont.Info, Codepoint,
                                        &AdvanceWidth, &LeftSideBearing);
@@ -995,11 +1034,12 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             DrawRectangle(Buffer, vMin, vMax, ColorFG);
         }
         
-        DrawText(&DefaultFont, Buffer, FontScale,
-                 GameState->TextInputText, GameState->TextInputCount, 
-                 Offset, ColorFG);
+        // Draw the text
+        DrawText(Buffer, &DefaultFont, FontScale,
+                 GameState->TextInputCount, (u8 *)GameState->TextInputText,  
+                 Offset, ColorFG, true);
         
-        Assert(GameState->TextInputCount < ArrayCount(GameState->TextInputText));
+        Assert(GameState->TextInputCount <= ArrayCount(GameState->TextInputText));
     }
 #endif
     
