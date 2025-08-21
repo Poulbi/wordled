@@ -73,6 +73,7 @@ struct color_rgb
         r32 E[3];
     };
 };
+#define color_rgb(A) color_rgb{(A), (A), (A)}
 
 #define Max(A, B) (((A) > (B)) ? (A) : (B))
 #define Min(A, B) (((A) < (B)) ? (A) : (B))
@@ -130,8 +131,6 @@ operator-(color_rgb A)
     return Result;
 }
 
-#define color_rgb(A) color_rgb{(A), (A), (A)}
-
 struct game_font
 {
     stbtt_fontinfo Info;
@@ -147,7 +146,9 @@ struct game_state
     u32 PatternGrid[6][5];
     u32 SelectedColor;
     u32 ExportedPatternIndex;
-    char WordleWord[WORDLE_LENGTH];
+    // TODO(luca): There is no need for utf8 since we know it will be between a-z.  We could use a single byte string and convert to char when appending to the input buffer.
+    // But the only benefit would be storing less bytes which isn't really a big deal for 5 characters.
+    rune WordleWord[WORDLE_LENGTH];
     
     game_font RegularFont;
     game_font ItalicFont;
