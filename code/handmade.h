@@ -1,20 +1,22 @@
 #if !defined(HANDMADE_H)
-/* ========================================================================
-   $File: $
-   $Date: $
-   $Revision: $
-   $Creator: Casey Muratori $
-   $Notice: (C) Copyright 2014 by Molly Rocket, Inc. All Rights Reserved. $
-   ======================================================================== */
 
+//~ Libraries 
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "libs/stb_truetype.h"
 #include "libs/linuxhmh/handmade_platform.h"
+
+#include "handmade_intrinsics.h"
 #include "handmade_math.h"
 
-#undef STB_TRUETYPE_IMPLEMENTATION
-#include "libs/stb_truetype.h"
+//~ Macro's
+#define Max(A, B) (((A) > (B)) ? (A) : (B))
+#define Min(A, B) (((A) < (B)) ? (A) : (B))
+#define Clamp(A, B, C) (Max((A), Min((B), (C))))
 
+//~ Constants
 #define WORDLE_LENGTH 5
 
+//~ Types
 enum square_colors
 {
     SquareColor_Gray,
@@ -23,15 +25,23 @@ enum square_colors
     SquareColor_Count
 };
 
+struct loaded_bitmap
+{
+    int Width;
+    int Height;
+    u32 *Pixels;
+};
+
+//~ Arena 
 struct memory_arena
 {
-    memory_index Size;
+    psize Size;
     u8 *Base;
-    memory_index Used;
+    psize Used;
 };
 
 void
-InitializeArena(memory_arena *Arena, memory_index Size, void *Base)
+InitializeArena(memory_arena *Arena, psize Size, void *Base)
 {
     Arena->Size = Size;
     Arena->Base = (u8 *)Base;
@@ -41,7 +51,7 @@ InitializeArena(memory_arena *Arena, memory_index Size, void *Base)
 #define PushStruct(Arena, type) ((type *)PushSize((Arena), (sizeof(type))))
 #define PushArray(Arena, Count, type) (type *)PushSize((Arena), (sizeof(type))*(Count)) 
 void *
-PushSize(memory_arena *Arena, memory_index Size)
+PushSize(memory_arena *Arena, psize Size)
 {
     Assert((Arena->Used + Size) < Arena->Size);
     
@@ -51,15 +61,7 @@ PushSize(memory_arena *Arena, memory_index Size)
     return Result;
 }
 
-#include "handmade_intrinsics.h"
-
-struct loaded_bitmap
-{
-    int Width;
-    int Height;
-    u32 *Pixels;
-};
-
+//~ Colors
 struct color_rgb
 {
     union
@@ -74,10 +76,6 @@ struct color_rgb
     };
 };
 #define color_rgb(A) color_rgb{(A), (A), (A)}
-
-#define Max(A, B) (((A) > (B)) ? (A) : (B))
-#define Min(A, B) (((A) < (B)) ? (A) : (B))
-#define Clamp(A, B, C) (Max((A), Min((B), (C))))
 
 inline color_rgb
 operator*(color_rgb A, r32 B)
@@ -131,6 +129,7 @@ operator-(color_rgb A)
     return Result;
 }
 
+//~ Game
 struct game_font
 {
     stbtt_fontinfo Info;
@@ -148,7 +147,10 @@ struct game_state
     u32 ExportedPatternIndex;
     // TODO(luca): There is no need for utf8 since we know it will be between a-z.  We could use a single byte string and convert to char when appending to the input buffer.
     // But the only benefit would be storing less bytes which isn't really a big deal for 5 characters.
+    b32 WordleWordIsValid;
     rune WordleWord[WORDLE_LENGTH];
+    
+    memory_arena ScratchArena;
     
     game_font RegularFont;
     game_font ItalicFont;

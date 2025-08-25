@@ -11,6 +11,7 @@ Compiler="clang"
 CompilerFlags="
 -O0
 -ggdb
+-g3
 -DHANDMADE_INTERNAL
 -DHANDMADE_SLOW
 -DOS_LINUX
@@ -35,12 +36,15 @@ ClangWarningFlags="
 -Wno-missing-braces
 -Wno-vla-extension
 -Wno-writable-strings
+-Wno-address-of-temporary
+-Wno-reorder-init-list
 "
 
 # Platform specific linker flags
 LinuxLinkerFlags="
 -lpthread
 -lasound
+-lcurl
 -lm
 -lX11
 -lXfixes"
@@ -63,6 +67,7 @@ printf 'handmade.cpp\n'
 $Compiler \
  $CompilerFlags \
  $WarningFlags \
+ -fPIC \
  -shared \
  -o ../build/handmade.so \
  handmade.cpp

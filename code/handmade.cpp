@@ -1,15 +1,38 @@
 #include "handmade.h"
 #include "handmade_random.h"
-#include "handmade_graph.cpp"
 
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "libs/stb_truetype.h"
+#include <curl/curl.h>
+#define STB_SPRINTF_IMPLEMENTATION
+#include "libs/stb_sprintf.h"
 
-// TODO(luca): Get rid of these.
+// TODO(luca): Get rid of this, do note that time.h is already included by curl.
 #include <time.h>
-#include <stdio.h>
-#include <stdlib.h>
 
+//- Helpers 
+internal color_rgb
+GetColorRGBForColorIndex(u32 Index)
+{
+    color_rgb Result = {};
+    color_rgb ColorGray = {0.23f, 0.23f, 0.24f};
+    color_rgb ColorYellow = {0.71f, 0.62f, 0.23f};
+    color_rgb ColorGreen = {0.32f, 0.55f, 0.31f};
+    
+    if(0) {}
+    else if(Index == SquareColor_Gray)   Result = ColorGray;
+    else if(Index == SquareColor_Yellow) Result = ColorYellow;
+    else if(Index == SquareColor_Green)  Result = ColorGreen;
+    
+    return Result;
+}
+
+void MemoryCopy(void *Dest, void *Source, size_t Count)
+{
+    u8 *DestinationByte = (u8 *)Dest;
+    u8 *SourceByte = (u8 *)Source;
+    while(Count--) *DestinationByte++ = *SourceByte++;
+}
+
+//- Sound 
 internal s16
 GetSineSound(u32 SampleRate)
 {
@@ -52,31 +75,7 @@ GameOutputSound(game_state *GameState, game_sound_output_buffer *SoundBuffer)
     }
 }
 
-internal void
-RenderWeirdGradient(game_offscreen_buffer *Buffer, int BlueOffset, int GreenOffset)
-{
-    // TODO(casey): Let's see what the optimizer does
-    
-    u8 *Row = (u8 *)Buffer->Memory;    
-    for(int Y = 0;
-        Y < Buffer->Height;
-        ++Y)
-    {
-        u32 *Pixel = (u32 *)Row;
-        for(int X = 0;
-            X < Buffer->Width;
-            ++X)
-        {
-            u8 Blue = (u8)(X + BlueOffset);
-            u8 Green = (u8)(Y + GreenOffset);
-            
-            *Pixel++ = (Green | Blue);
-        }
-        
-        Row += Buffer->Pitch;
-    }
-}
-
+//- Rendering 
 internal void
 DrawRectangle(game_offscreen_buffer *Buffer,
               v2 vMin, v2 vMax,
@@ -132,183 +131,6 @@ DrawRectangle(game_offscreen_buffer *Buffer,
         Row += Buffer->Pitch;
     }
     
-}
-
-internal void
-DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap Bitmap, 
-           r32 RealX, r32 RealY,
-           s32 AlignX = 0, s32 AlignY = 0)
-{
-    RealX -= AlignX;
-    RealY -= AlignY;
-    
-    s32 MinX = RoundReal32ToInt32(RealX);
-    s32 MinY = RoundReal32ToInt32(RealY);
-    s32 MaxX = RoundReal32ToInt32(RealX + (r32)Bitmap.Width);
-    s32 MaxY = RoundReal32ToInt32(RealY + (r32)Bitmap.Height);
-    
-    s32 SourceOffsetX = 0;
-    if(MinX < 0)
-    {
-        SourceOffsetX = -MinX;
-        MinX = 0;
-    }
-    
-    s32 SourceOffsetY = 0;
-    if(MinY < 0)
-    {
-        SourceOffsetY = -MinY;
-        MinY = 0;
-    }
-    
-    if(MaxX > Buffer->Width)
-    {
-        MaxX = Buffer->Width;
-    }
-    
-    if(MaxY > Buffer->Height)
-    {
-        MaxY = Buffer->Height;
-    }
-    
-    // TODO(casey): Source row needs to be changed based on clipping.
-    
-    u32 *SourceRow = ((u32 *)Bitmap.Pixels + Bitmap.Width*(Bitmap.Height - 1));
-    SourceRow += -(Bitmap.Width*SourceOffsetY) + SourceOffsetX;
-    u8 *DestRow = ((u8 *)Buffer->Memory + 
-                   MinX*Buffer->BytesPerPixel + 
-                   MinY*Buffer->Pitch);
-    for(s32 Y = MinY;
-        Y < MaxY;
-        Y++)
-    {
-        u32 *Dest = (u32 *)DestRow;
-        u32 *Source = (u32 *)SourceRow;
-        for(s32 X = MinX;
-            X < MaxX;
-            X++)
-        {
-            
-            // simple alpha rendering 
-            r32 A = (r32)((*Source >> 24) & 0xFF)/255.0f;
-            r32 SR = (r32)((*Source >> 16) & 0xFF);
-            r32 SG = (r32)((*Source >> 8) & 0xFF);
-            r32 SB = (r32)((*Source >> 0) & 0xFF);
-            
-            r32 DR = (r32)((*Dest >> 16) & 0xFF);
-            r32 DG = (r32)((*Dest >> 8) & 0xFF);
-            r32 DB = (r32)((*Dest >> 0) & 0xFF);
-            
-            r32 R = ((1-A)*DR + A*SR);
-            r32 G = ((1-A)*DG + A*SG);
-            r32 B = ((1-A)*DB + A*SB);
-            
-            u32 C = (((u32)(R + 0.5f) << 16) |
-                     ((u32)(G + 0.5f) << 8) |
-                     ((u32)(B + 0.5f) << 0));
-            *Dest = C;
-            
-            Dest++;
-            Source++;
-        }
-        
-        DestRow += Buffer->Pitch;
-        SourceRow -= Bitmap.Width;
-    }
-    
-}
-
-internal inline
-void MemCpy(char *Dest, char *Source, size_t Count)
-{
-    while(Count--) *Dest++ = *Source++;
-}
-
-#pragma pack(push, 1)
-struct bitmap_header
-{
-    u16 FileType;
-    u32 FileSize;
-    u16 Reserved1;
-    u16 Reserved2;
-    u32 BitmapOffset;
-    u32 Size;
-    s32 Width;
-    s32 Height;
-    u16 Planes;
-    u16 BitsPerPixel;
-    u32 Compression;
-    u32 PicSize;
-    u32 HorizontalResolution;
-    u32 VerticalResolution;
-    u32 Colors;
-    u32 ColorsImportant;
-    
-    u32 RedMask;
-    u32 GreenMask;
-    u32 BlueMask;
-    u32 AlphaMask;
-};
-#pragma pack(pop)
-
-internal loaded_bitmap
-DEBUGLoadBMP(thread_context *Thread, debug_platform_read_entire_file *DEBUGPlatformReadEntireFile,
-             char *FileName)
-{
-    loaded_bitmap Result = {};
-    debug_read_file_result File = DEBUGPlatformReadEntireFile(Thread, FileName);
-    
-    if(File.ContentsSize)
-    {
-        bitmap_header *Header = (bitmap_header *)File.Contents;
-        
-        u32 *Pixels = (u32 *)((u8 *)File.Contents + Header->BitmapOffset);
-        
-        // NOTE(casey): If you are using this generically for some reason, please remember that
-        // BMP files CAN GO IN EITHER DIRECTION and the height will be negative for top-down.
-        // (Also, there can be compression, etc..., etc...)
-        
-        // NOTE(casey): Byte order in memory is determined by the header itself, so we have to read
-        // out the masks and convert the pixels ourselves.
-        s32 RedMask = Header->RedMask;
-        s32 BlueMask = Header->BlueMask;
-        s32 GreenMask = Header->GreenMask;
-        s32 AlphaMask = ~(RedMask | GreenMask | BlueMask);
-        
-        bit_scan_result RedShift = FindLeastSignificantSetBit(RedMask);
-        bit_scan_result GreenShift = FindLeastSignificantSetBit(GreenMask);
-        bit_scan_result BlueShift = FindLeastSignificantSetBit(BlueMask);
-        bit_scan_result AlphaShift = FindLeastSignificantSetBit(AlphaMask);
-        Assert(AlphaShift.Found);
-        Assert(RedShift.Found);
-        Assert(GreenShift.Found);
-        Assert(BlueShift.Found);
-        Assert(Header->Compression == 3);
-        
-        u32 *SourceDest = Pixels;
-        for(s32 Y = 0;
-            Y < Header->Height;
-            Y++)
-        {
-            for(s32 X = 0;
-                X < Header->Width;
-                X++)
-            {
-                u32 C = *SourceDest;
-                u32 ConvertedColor = ((((C >> AlphaShift.Index) & 0xFF) << 24) | 
-                                      (((C >> RedShift.Index)   & 0xFF) << 16) | 
-                                      (((C >> GreenShift.Index) & 0xFF) << 8)  | 
-                                      (((C >> BlueShift.Index)  & 0xFF) << 0));
-                *SourceDest++ = ConvertedColor;
-            }
-        }
-        
-        Result.Pixels = Pixels;
-        Result.Width = Header->Width;
-        Result.Height = Header->Height;
-    }
-    
-    return Result;
 }
 
 internal void
@@ -459,6 +281,178 @@ DrawTextWithAlternatingFonts(game_font *Font1, game_font *Font2,
     }
 }
 
+internal void
+DrawBitmap(game_offscreen_buffer *Buffer, loaded_bitmap Bitmap, 
+           r32 RealX, r32 RealY,
+           s32 AlignX = 0, s32 AlignY = 0)
+{
+    RealX -= AlignX;
+    RealY -= AlignY;
+    
+    s32 MinX = RoundReal32ToInt32(RealX);
+    s32 MinY = RoundReal32ToInt32(RealY);
+    s32 MaxX = RoundReal32ToInt32(RealX + (r32)Bitmap.Width);
+    s32 MaxY = RoundReal32ToInt32(RealY + (r32)Bitmap.Height);
+    
+    s32 SourceOffsetX = 0;
+    if(MinX < 0)
+    {
+        SourceOffsetX = -MinX;
+        MinX = 0;
+    }
+    
+    s32 SourceOffsetY = 0;
+    if(MinY < 0)
+    {
+        SourceOffsetY = -MinY;
+        MinY = 0;
+    }
+    
+    if(MaxX > Buffer->Width)
+    {
+        MaxX = Buffer->Width;
+    }
+    
+    if(MaxY > Buffer->Height)
+    {
+        MaxY = Buffer->Height;
+    }
+    
+    // TODO(casey): Source row needs to be changed based on clipping.
+    
+    u32 *SourceRow = ((u32 *)Bitmap.Pixels + Bitmap.Width*(Bitmap.Height - 1));
+    SourceRow += -(Bitmap.Width*SourceOffsetY) + SourceOffsetX;
+    u8 *DestRow = ((u8 *)Buffer->Memory + 
+                   MinX*Buffer->BytesPerPixel + 
+                   MinY*Buffer->Pitch);
+    for(s32 Y = MinY;
+        Y < MaxY;
+        Y++)
+    {
+        u32 *Dest = (u32 *)DestRow;
+        u32 *Source = (u32 *)SourceRow;
+        for(s32 X = MinX;
+            X < MaxX;
+            X++)
+        {
+            
+            // simple alpha rendering 
+            r32 A = (r32)((*Source >> 24) & 0xFF)/255.0f;
+            r32 SR = (r32)((*Source >> 16) & 0xFF);
+            r32 SG = (r32)((*Source >> 8) & 0xFF);
+            r32 SB = (r32)((*Source >> 0) & 0xFF);
+            
+            r32 DR = (r32)((*Dest >> 16) & 0xFF);
+            r32 DG = (r32)((*Dest >> 8) & 0xFF);
+            r32 DB = (r32)((*Dest >> 0) & 0xFF);
+            
+            r32 R = ((1-A)*DR + A*SR);
+            r32 G = ((1-A)*DG + A*SG);
+            r32 B = ((1-A)*DB + A*SB);
+            
+            u32 C = (((u32)(R + 0.5f) << 16) |
+                     ((u32)(G + 0.5f) << 8) |
+                     ((u32)(B + 0.5f) << 0));
+            *Dest = C;
+            
+            Dest++;
+            Source++;
+        }
+        
+        DestRow += Buffer->Pitch;
+        SourceRow -= Bitmap.Width;
+    }
+    
+}
+
+#pragma pack(push, 1)
+struct bitmap_header
+{
+    u16 FileType;
+    u32 FileSize;
+    u16 Reserved1;
+    u16 Reserved2;
+    u32 BitmapOffset;
+    u32 Size;
+    s32 Width;
+    s32 Height;
+    u16 Planes;
+    u16 BitsPerPixel;
+    u32 Compression;
+    u32 PicSize;
+    u32 HorizontalResolution;
+    u32 VerticalResolution;
+    u32 Colors;
+    u32 ColorsImportant;
+    
+    u32 RedMask;
+    u32 GreenMask;
+    u32 BlueMask;
+    u32 AlphaMask;
+};
+#pragma pack(pop)
+
+internal loaded_bitmap
+DEBUGLoadBMP(thread_context *Thread, debug_platform_read_entire_file *DEBUGPlatformReadEntireFile,
+             char *FileName)
+{
+    loaded_bitmap Result = {};
+    debug_read_file_result File = DEBUGPlatformReadEntireFile(Thread, FileName);
+    
+    if(File.ContentsSize)
+    {
+        bitmap_header *Header = (bitmap_header *)File.Contents;
+        
+        u32 *Pixels = (u32 *)((u8 *)File.Contents + Header->BitmapOffset);
+        
+        // NOTE(casey): If you are using this generically for some reason, please remember that
+        // BMP files CAN GO IN EITHER DIRECTION and the height will be negative for top-down.
+        // (Also, there can be compression, etc..., etc...)
+        
+        // NOTE(casey): Byte order in memory is determined by the header itself, so we have to read
+        // out the masks and convert the pixels ourselves.
+        s32 RedMask = Header->RedMask;
+        s32 BlueMask = Header->BlueMask;
+        s32 GreenMask = Header->GreenMask;
+        s32 AlphaMask = ~(RedMask | GreenMask | BlueMask);
+        
+        bit_scan_result RedShift = FindLeastSignificantSetBit(RedMask);
+        bit_scan_result GreenShift = FindLeastSignificantSetBit(GreenMask);
+        bit_scan_result BlueShift = FindLeastSignificantSetBit(BlueMask);
+        bit_scan_result AlphaShift = FindLeastSignificantSetBit(AlphaMask);
+        Assert(AlphaShift.Found);
+        Assert(RedShift.Found);
+        Assert(GreenShift.Found);
+        Assert(BlueShift.Found);
+        Assert(Header->Compression == 3);
+        
+        u32 *SourceDest = Pixels;
+        for(s32 Y = 0;
+            Y < Header->Height;
+            Y++)
+        {
+            for(s32 X = 0;
+                X < Header->Width;
+                X++)
+            {
+                u32 C = *SourceDest;
+                u32 ConvertedColor = ((((C >> AlphaShift.Index) & 0xFF) << 24) | 
+                                      (((C >> RedShift.Index)   & 0xFF) << 16) | 
+                                      (((C >> GreenShift.Index) & 0xFF) << 8)  | 
+                                      (((C >> BlueShift.Index)  & 0xFF) << 0));
+                *SourceDest++ = ConvertedColor;
+            }
+        }
+        
+        Result.Pixels = Pixels;
+        Result.Width = Header->Width;
+        Result.Height = Header->Height;
+    }
+    
+    return Result;
+}
+
+//- Wordled 
 internal b32
 ValidLetterCountInGuess(rune *Word, u8 *Guess, rune Letter)
 {
@@ -485,71 +479,133 @@ ValidLetterCountInGuess(rune *Word, u8 *Guess, rune Letter)
     return Valid;
 }
 
-internal void
-GetTodaysWordle(thread_context *Thread, game_memory *Memory, char *Word)
+//- Curl 
+internal psize 
+CurlCBLog(void *Buffer, psize ItemsSize, psize Size, void *UserPointer)
 {
-    struct tm *LocalTimeNow = 0;
-    time_t Now = 0;
-    time(&Now);
-    LocalTimeNow = localtime(&Now);
-    
-    char URL[] = "https://www.nytimes.com/svc/wordle/v2";
-    char URLBuffer[256] = {0};
-    sprintf(URLBuffer, "%s/%d-%02d-%d.json", URL, 
-            LocalTimeNow->tm_year + 1900, LocalTimeNow->tm_mon + 1, LocalTimeNow->tm_mday);
-    char OutputBuffer[4096] = {0};
-    char *Command[] = 
+    psize Result = 0;
+    if(Size == 1)
     {
-        "/usr/bin/curl", 
-        "--silent", 
-        "--location", 
-        "--max-time", "10",
-        URLBuffer, 0
-    };
-    
-    // TODO(luca): This should be asynchronous at least because in the case of no internet the application would not even start.
-    int BytesOutputted = Memory->PlatformRunCommandAndGetOutput(Thread, OutputBuffer, Command);
-    int Matches;
-    int MatchedAt = 0;
-    
-    for(int At = 0;
-        At < BytesOutputted;
-        At++)
-    {
-        Matches = true;
-        char ScanMatch[] = "solution";
-        int ScanMatchSize = sizeof(ScanMatch) - 1;
-        for(int ScanAt = 0;
-            ScanAt < ScanMatchSize;
-            ScanAt++)
-        {
-            if((OutputBuffer + At)[ScanAt] != ScanMatch[ScanAt])
-            {
-                Matches = false;
-                break;
-            }
-        }
-        if(Matches)
-        {
-            MatchedAt = At;
-            break;
-        }
+        Result = ItemsSize;
     }
-    if(Matches)
+    else
     {
-        int Start = 0;
-        int End = 0;
-        int Scan = MatchedAt;
-        while(OutputBuffer[Scan++] != '"' && Scan < BytesOutputted);
-        while(OutputBuffer[Scan++] != '"' && Scan < BytesOutputted);
-        Start = Scan;
-        while(OutputBuffer[Scan] != '"' && Scan < BytesOutputted) Scan++;
-        End = Scan;
-        
-        MemCpy(Word, OutputBuffer+Start, End-Start);
+        Result = Size;
     }
+    
+    Log((char *)Buffer);
+    return Result;
 }
 
+internal psize 
+CurlCBWriteToArena(void *Buffer, psize Size, psize DataSize, void *UserPointer)
+{
+    Assert(Size == 1);
+    psize Result = DataSize;
+    
+    memory_arena *Arena = (memory_arena *)UserPointer;
+    
+    MemoryCopy((Arena->Base + Arena->Used), Buffer, DataSize);
+    Assert(Arena->Used + DataSize <= Arena->Size);
+    Arena->Used += DataSize;
+    
+    return Result;
+}
+
+struct get_todays_wordle_curl_params
+{
+    b32 *Done;
+    memory_arena *Arena;
+    rune *Word;
+};
+
+PLATFORM_WORK_QUEUE_CALLBACK(GetTodaysWordleCurl)
+{
+    memory_arena *Arena = ((get_todays_wordle_curl_params *)Data)->Arena;
+    b32 *Done = ((get_todays_wordle_curl_params *)Data)->Done;
+    rune *Word = ((get_todays_wordle_curl_params *)Data)->Word;
+    
+    char URL[] = "https://www.nytimes.com/svc/wordle/v2";
+    
+    time_t Now = 0;
+    time(&Now);
+    struct tm *LocalTimeNow = localtime(&Now);
+    
+    u8 URLBuffer[256] = {};
+    stbsp_sprintf((char *)URLBuffer, "%s/%d-%02d-%d.json", URL,
+                  LocalTimeNow->tm_year + 1900,
+                  LocalTimeNow->tm_mon + 1,
+                  LocalTimeNow->tm_mday);
+    
+    psize StartPos = Arena->Used;
+    
+    CURL *CurlHandle = curl_easy_init();
+    
+    // NOTE(luca): init to NULL is important
+    struct curl_slist *Headers = 0;
+    
+    // NOTE(luca): Cosplay as my computer.
+    Headers = curl_slist_append(Headers, "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:134.0) Gecko/20100101 Firefox/134.0");
+#if 0        
+    curl_easy_setopt(CurlHandle, CURLOPT_HEADERFUNCTION, CurlCBLog);
+#endif
+    
+    if(CURLE_OK == (curl_easy_setopt(CurlHandle, CURLOPT_VERBOSE, 0L)) &&
+       CURLE_OK == (curl_easy_setopt(CurlHandle, CURLOPT_URL, URLBuffer)) &&
+       CURLE_OK == (curl_easy_setopt(CurlHandle, CURLOPT_WRITEFUNCTION, CurlCBWriteToArena)) &&
+       CURLE_OK == (curl_easy_setopt(CurlHandle, CURLOPT_WRITEDATA, Arena)) &&
+       CURLE_OK == (curl_easy_setopt(CurlHandle, CURLOPT_FOLLOWLOCATION, 1L)) &&
+       CURLE_OK == (curl_easy_setopt(CurlHandle, CURLOPT_HTTPHEADER, Headers)) &&
+       CURLE_OK == (curl_easy_perform(CurlHandle)))
+    {
+        char *Str = (char *)(Arena->Base  + StartPos);
+        psize Size = (Arena->Used - StartPos);
+        
+        char MatchStr[] = "\"solution\":";
+        b32 IsMatch = false;
+        psize MatchAt = 0;
+        for(psize ScanIndex = 0;
+            ((ScanIndex < Size) && (!IsMatch));
+            ScanIndex++)
+        {
+            MatchAt = ScanIndex;
+            IsMatch = true;
+            for(psize MatchIndex = 0;
+                ((MatchIndex < (sizeof(MatchStr) - 1)) &&
+                 (MatchIndex + ScanIndex < Size));
+                MatchIndex++)
+            {
+                if(MatchStr[MatchIndex] != Str[ScanIndex + MatchIndex])
+                {
+                    IsMatch = false;
+                    break;
+                }
+            }
+        }
+        
+        if(IsMatch)
+        {
+            MatchAt += (sizeof("\"solution\":\"") - 1);
+            for(psize CharIndex = 0;
+                CharIndex < WORDLE_LENGTH;
+                CharIndex++)
+            {
+                Word[CharIndex] = Str[MatchAt + CharIndex];
+            }
+        }
+        
+    }
+    else
+    {
+        Log("Failed to get HTML.");
+    }
+    
+    curl_easy_cleanup(CurlHandle);
+    
+    *Done = true;
+}
+
+//- Input 
 internal void 
 AppendCharToInputText(game_state *GameState, rune Codepoint)
 {
@@ -559,22 +615,7 @@ AppendCharToInputText(game_state *GameState, rune Codepoint)
     }
 }
 
-internal color_rgb
-GetColorRGBForColorIndex(u32 Index)
-{
-    color_rgb Color = {};
-    color_rgb ColorGray = {0.23f, 0.23f, 0.24f};
-    color_rgb ColorYellow = {0.71f, 0.62f, 0.23f};
-    color_rgb ColorGreen = {0.32f, 0.55f, 0.31f};
-    
-    if(0) {}
-    else if(Index == SquareColor_Gray)   Color = ColorGray;
-    else if(Index == SquareColor_Yellow) Color = ColorYellow;
-    else if(Index == SquareColor_Green)  Color = ColorGreen;
-    
-    return Color;
-}
-
+//- Font 
 internal void
 InitFont(thread_context *Thread, game_font *Font, game_memory *Memory, char *FilePath)
 {
@@ -604,6 +645,7 @@ InitFont(thread_context *Thread, game_font *Font, game_memory *Memory, char *Fil
     }
 }
 
+//- Game callbacks 
 extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
     Assert((&Input->Controllers[0].Terminator - &Input->Controllers[0].Buttons[0]) ==
@@ -621,19 +663,14 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         GameState->SelectedColor = SquareColor_Yellow;
         GameState->ExportedPatternIndex = 0;
         
-        // TODO(luca): Better GetTodaysWordle function using libcurl.
-#if 0        
-        GetTodaysWordle(Thread, Memory, GameState->WordleWord);
-#else
-        char *Word = "sword";
-        for(u32 Count = 0; Count < 5; Count++)
-        {
-            GameState->WordleWord[Count] = Word[Count];
-        }
-#endif
+        InitializeArena(&GameState->ScratchArena, Megabytes(1), Memory->TransientStorage);
+        GameState->WordleWordIsValid = false;
         
         GameState->TextInputCount = 0;
         GameState->TextInputMode = true;
+        
+        Log = Memory->PlatformLog;
+        curl_global_init(CURL_GLOBAL_ALL);
         
         Memory->IsInitialized = true;
     }
@@ -652,7 +689,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             else
             {
                 Assert(Controller->Text.Count < ArrayCount(Controller->Text.Buffer));
-                
                 
                 // TODO(luca): This should use the minimum in case where there are more keys in the Keyboard.TextInputBuffer than in GameState->TextInputText
                 for(u32 InputIndex = 0;
@@ -698,8 +734,6 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     else if(Button.Codepoint == '\n' ||
                             Button.Codepoint == '\r')
                     {
-                        printf("Test\n");
-                        
                         for(u32 InputIndex = 0;
                             InputIndex < ArrayCount(GameState->WordleWord);
                             InputIndex++)
@@ -713,18 +747,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                                 GameState->WordleWord[InputIndex] = ' ';
                             }
                         }
-                        // ???
+                        
+                        GameState->WordleWordIsValid = true;
                     }
                     else
                     {
                         // Only allow characters the Wordle game would allow.
+                        
+                        if((Button.Codepoint >= 'A' &&
+                            (Button.Codepoint) <= 'Z'))
+                        {
+                            Button.Codepoint = (Button.Codepoint - 'A') + 'a';
+                        }
                         
                         if((Button.Codepoint >= 'a' && Button.Codepoint <= 'z') || Button.Codepoint == ' ')
                         {
                             AppendCharToInputText(GameState, Button.Codepoint);
                         }
                     }
-                    
                 }
                 
                 if(WasPressed(Input->MouseButtons[PlatformMouseButton_ScrollUp]))
@@ -743,6 +783,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                 if(WasPressed(Controller->ActionLeft))
                 {
                     GameState->TextInputMode = !GameState->TextInputMode;
+                }
+                
+                if(WasPressed(Controller->ActionUp))
+                {
+                    GameState->WordleWordIsValid = false;
+                    Memory->PlatformAddEntry(Memory->HighPriorityQueue, GetTodaysWordleCurl, &(get_todays_wordle_curl_params){
+                                                 .Done = &GameState->WordleWordIsValid,
+                                                 .Arena = &GameState->ScratchArena,
+                                                 .Word = GameState->WordleWord, 
+                                             });
                 }
                 
             }
@@ -794,7 +844,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                         GameState->PatternGrid[Y][X] = GameState->SelectedColor;
                     }
                     Color = GetColorRGBForColorIndex(GameState->SelectedColor);
-                    DrawRectangle(Buffer, vMin, vMax, color_rgb(0.0f));
+                    DrawRectangle(Buffer, vMin, vMax, color_rgb(0.0f)); // Change to white
                     DrawRectangle(Buffer, 
                                   vMin + Padding, vMax - Padding,
                                   Color);
@@ -876,117 +926,120 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     
     TextOffset = v2{16.0f, 16.0f + Baseline};
     
-    DrawText(Buffer, &DefaultFont, FontScale, 
-             ArrayCount(GameState->WordleWord), (u8 *)GameState->WordleWord,
-             TextOffset + -v2{8.0f, 0.0f}, color_rgb(1.0f), true);
-    
-    TextOffset.Y += YAdvance*2.0f;
-    
-    //-Matche the pattern
-    rune *Word = GameState->WordleWord;
-    debug_read_file_result WordsFile = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
-    
-    int WordsCount = WordsFile.ContentsSize / WORDLE_LENGTH;
-    if(WordsFile.Contents)
+    if(GameState->WordleWordIsValid)
     {
-        u8 *Words = (u8 *)WordsFile.Contents;
+        DrawText(Buffer, &DefaultFont, FontScale, 
+                 ArrayCount(GameState->WordleWord), (u8 *)GameState->WordleWord,
+                 TextOffset + -v2{8.0f, 0.0f}, color_rgb(1.0f), true);
         
-        s32 PatternRowAt = 0;
-        s32 PatternRowsCount = 6;
+        TextOffset.Y += YAdvance*2.0f;
         
-        for(s32 WordsIndex = 0;
-            ((WordsIndex < WordsCount) && 
-             (PatternRowAt < PatternRowsCount));
-            WordsIndex++)
+        //-Matche the pattern
+        rune *Word = GameState->WordleWord;
+        debug_read_file_result WordsFile = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
+        
+        int WordsCount = WordsFile.ContentsSize / WORDLE_LENGTH;
+        if(WordsFile.Contents)
         {
-            // Match the pattern's row against the guess.
-            // TODO(luca): Check if the guess == the word and skip it otherwise it would end the game.
-            s32 PatternMatches = 1;
-            u8 *Guess = &Words[WordsIndex*(WORDLE_LENGTH+1)];
-            for(s32 CharIndex = 0;
-                ((CharIndex < WORDLE_LENGTH) &&
-                 (PatternMatches));
-                CharIndex++)
+            u8 *Words = (u8 *)WordsFile.Contents;
+            
+            s32 PatternRowAt = 0;
+            s32 PatternRowsCount = 6;
+            
+            for(s32 WordsIndex = 0;
+                ((WordsIndex < WordsCount) && 
+                 (PatternRowAt < PatternRowsCount));
+                WordsIndex++)
             {
-                u8 GuessCh = Guess[CharIndex];
-                s32 PatternValue = GameState->PatternGrid[PatternRowAt][CharIndex];
-                
-                if(PatternValue == SquareColor_Green)
+                // Match the pattern's row against the guess.
+                // TODO(luca): Check if the guess == the word and skip it otherwise it would end the game.
+                s32 PatternMatches = 1;
+                u8 *Guess = &Words[WordsIndex*(WORDLE_LENGTH+1)];
+                for(s32 CharIndex = 0;
+                    ((CharIndex < WORDLE_LENGTH) &&
+                     (PatternMatches));
+                    CharIndex++)
                 {
-                    PatternMatches = (GuessCh == Word[CharIndex]);
-                }
-                else if(PatternValue == SquareColor_Yellow)
-                {
-                    PatternMatches = 0;
-                    for(s32 CharAt = 0;
-                        CharAt < WORDLE_LENGTH;
-                        CharAt++)
+                    u8 GuessCh = Guess[CharIndex];
+                    s32 PatternValue = GameState->PatternGrid[PatternRowAt][CharIndex];
+                    
+                    if(PatternValue == SquareColor_Green)
                     {
-                        if(Word[CharAt] == GuessCh)
+                        PatternMatches = (GuessCh == Word[CharIndex]);
+                    }
+                    else if(PatternValue == SquareColor_Yellow)
+                    {
+                        PatternMatches = 0;
+                        for(s32 CharAt = 0;
+                            CharAt < WORDLE_LENGTH;
+                            CharAt++)
                         {
-                            if(CharAt != CharIndex)
+                            if(Word[CharAt] == GuessCh)
                             {
-                                // TODO(luca): Should also check that position does not match.
-                                PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
+                                if(CharAt != CharIndex)
+                                {
+                                    // TODO(luca): Should also check that position does not match.
+                                    PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
+                                }
+                                else
+                                {
+                                    PatternMatches = 0;
+                                }
+                                
+                                break;
                             }
-                            else
+                        }
+                        
+                    }
+                    // TODO(luca): Have one that can be either yellow/green
+#if 0
+                    else if(PatternValue == 1)
+                    {
+                        PatternMatches = 0;
+                        for(s32 CharAt = 0;
+                            CharAt < WORDLE_LENGTH;
+                            CharAt++)
+                        {
+                            if(Word[CharAt] == GuessCh)
+                            {
+                                PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
+                                break;
+                            }
+                        }
+                    }
+#endif
+                    else if(PatternValue == SquareColor_Gray)
+                    {
+                        PatternMatches = 1;
+                        for(s32 CharAt = 0;
+                            CharAt < WORDLE_LENGTH;
+                            CharAt++)
+                        {
+                            if(Word[CharAt] == GuessCh)
                             {
                                 PatternMatches = 0;
+                                break;
                             }
-                            
-                            break;
                         }
                     }
+                }
+                
+                if(PatternMatches)
+                {
+                    DrawText(Buffer, &DefaultFont, FontScale,
+                             WORDLE_LENGTH, Guess, 
+                             TextOffset, color_rgb(1.0f), false);
                     
+                    TextOffset.Y += YAdvance;
+                    
+                    WordsIndex = 0;
+                    PatternRowAt++;
                 }
-                // TODO(luca): Have one that can be either yellow/green
-#if 0
-                else if(PatternValue == 1)
-                {
-                    PatternMatches = 0;
-                    for(s32 CharAt = 0;
-                        CharAt < WORDLE_LENGTH;
-                        CharAt++)
-                    {
-                        if(Word[CharAt] == GuessCh)
-                        {
-                            PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
-                            break;
-                        }
-                    }
-                }
-#endif
-                else if(PatternValue == SquareColor_Gray)
-                {
-                    PatternMatches = 1;
-                    for(s32 CharAt = 0;
-                        CharAt < WORDLE_LENGTH;
-                        CharAt++)
-                    {
-                        if(Word[CharAt] == GuessCh)
-                        {
-                            PatternMatches = 0;
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            if(PatternMatches)
-            {
-                DrawText(Buffer, &DefaultFont, FontScale,
-                         WORDLE_LENGTH, Guess, 
-                         TextOffset, color_rgb(1.0f), false);
-                
-                TextOffset.Y += YAdvance;
-                
-                WordsIndex = 0;
-                PatternRowAt++;
             }
         }
+        
+        Memory->DEBUGPlatformFreeFileMemory(Thread, WordsFile.Contents, WordsFile.ContentsSize);
     }
-    
-    Memory->DEBUGPlatformFreeFileMemory(Thread, WordsFile.Contents, WordsFile.ContentsSize);
     
     // NOTE(luca): Debug code for drawing inputted text.
 #if 1
