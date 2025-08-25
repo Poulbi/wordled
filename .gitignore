@@ -1,4 +1,6 @@
 build/*.hmi
+build/*.zip
+build/*.tar.gz
 game.zip
 *.o
 *.json
