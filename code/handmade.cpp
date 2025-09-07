@@ -532,7 +532,7 @@ PLATFORM_WORK_QUEUE_CALLBACK(GetTodaysWordleCurl)
     struct tm *LocalTimeNow = localtime(&Now);
     
     u8 URLBuffer[256] = {};
-    stbsp_sprintf((char *)URLBuffer, "%s/%d-%02d-%d.json", URL,
+    stbsp_sprintf((char *)URLBuffer, "%s/%d-%02d-%02d.json", URL,
                   LocalTimeNow->tm_year + 1900,
                   LocalTimeNow->tm_mon + 1,
                   LocalTimeNow->tm_mday);
@@ -946,79 +946,87 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             s32 PatternRowAt = 0;
             s32 PatternRowsCount = 6;
             
-            for(s32 WordsIndex = 0;
-                ((WordsIndex < WordsCount) && 
-                 (PatternRowAt < PatternRowsCount));
-                WordsIndex++)
+            for(s32 PatternRowAt = 0;
+                PatternRowAt < PatternRowsCount;
+                PatternRowAt++)
             {
-                // Match the pattern's row against the guess.
-                // TODO(luca): Check if the guess == the word and skip it otherwise it would end the game.
-                s32 PatternMatches = 1;
-                u8 *Guess = &Words[WordsIndex*(WORDLE_LENGTH+1)];
-                for(s32 CharIndex = 0;
-                    ((CharIndex < WORDLE_LENGTH) &&
-                     (PatternMatches));
-                    CharIndex++)
+                s32 PatternMatches = 0;
+                u8 *Guess = 0;
+                
+                for(s32 WordsIndex = 0;
+                    ((WordsIndex < WordsCount) &&
+                     (!PatternMatches));
+                    WordsIndex++)
                 {
-                    u8 GuessCh = Guess[CharIndex];
-                    s32 PatternValue = GameState->PatternGrid[PatternRowAt][CharIndex];
-                    
-                    if(PatternValue == SquareColor_Green)
+                    // Match the pattern's row against the guess.
+                    // TODO(luca): Check if the guess == the word and skip it otherwise it would end the game.
+                    Guess = &Words[WordsIndex*(WORDLE_LENGTH+1)];
+                    PatternMatches = 1;
+                    for(s32 CharIndex = 0;
+                        ((CharIndex < WORDLE_LENGTH) &&
+                         (PatternMatches));
+                        CharIndex++)
                     {
-                        PatternMatches = (GuessCh == Word[CharIndex]);
-                    }
-                    else if(PatternValue == SquareColor_Yellow)
-                    {
-                        PatternMatches = 0;
-                        for(s32 CharAt = 0;
-                            CharAt < WORDLE_LENGTH;
-                            CharAt++)
+                        u8 GuessCh = Guess[CharIndex];
+                        s32 PatternValue = GameState->PatternGrid[PatternRowAt][CharIndex];
+                        
+                        if(PatternValue == SquareColor_Green)
                         {
-                            if(Word[CharAt] == GuessCh)
+                            PatternMatches = (GuessCh == Word[CharIndex]);
+                        }
+                        else if(PatternValue == SquareColor_Yellow)
+                        {
+                            PatternMatches = 0;
+                            for(s32 CharAt = 0;
+                                CharAt < WORDLE_LENGTH;
+                                CharAt++)
                             {
-                                if(CharAt != CharIndex)
+                                if(Word[CharAt] == GuessCh)
                                 {
-                                    // TODO(luca): Should also check that position does not match.
-                                    PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
+                                    if(CharAt != CharIndex)
+                                    {
+                                        // TODO(luca): Should also check that position does not match.
+                                        PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
+                                    }
+                                    else
+                                    {
+                                        PatternMatches = 0;
+                                    }
+                                    
+                                    break;
                                 }
-                                else
+                            }
+                            
+                        }
+                        // TODO(luca): Have one that can be either yellow/green
+#if 0
+                        else if(PatternValue == 1)
+                        {
+                            PatternMatches = 0;
+                            for(s32 CharAt = 0;
+                                CharAt < WORDLE_LENGTH;
+                                CharAt++)
+                            {
+                                if(Word[CharAt] == GuessCh)
+                                {
+                                    PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
+                                    break;
+                                }
+                            }
+                        }
+#endif
+                        else if(PatternValue == SquareColor_Gray)
+                        {
+                            PatternMatches = 1;
+                            for(s32 CharAt = 0;
+                                CharAt < WORDLE_LENGTH;
+                                CharAt++)
+                            {
+                                if(Word[CharAt] == GuessCh)
                                 {
                                     PatternMatches = 0;
+                                    break;
                                 }
-                                
-                                break;
-                            }
-                        }
-                        
-                    }
-                    // TODO(luca): Have one that can be either yellow/green
-#if 0
-                    else if(PatternValue == 1)
-                    {
-                        PatternMatches = 0;
-                        for(s32 CharAt = 0;
-                            CharAt < WORDLE_LENGTH;
-                            CharAt++)
-                        {
-                            if(Word[CharAt] == GuessCh)
-                            {
-                                PatternMatches = ValidLetterCountInGuess(Word, Guess, GuessCh);
-                                break;
-                            }
-                        }
-                    }
-#endif
-                    else if(PatternValue == SquareColor_Gray)
-                    {
-                        PatternMatches = 1;
-                        for(s32 CharAt = 0;
-                            CharAt < WORDLE_LENGTH;
-                            CharAt++)
-                        {
-                            if(Word[CharAt] == GuessCh)
-                            {
-                                PatternMatches = 0;
-                                break;
                             }
                         }
                     }
@@ -1029,12 +1037,15 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
                     DrawText(Buffer, &DefaultFont, FontScale,
                              WORDLE_LENGTH, Guess, 
                              TextOffset, color_rgb(1.0f), false);
-                    
-                    TextOffset.Y += YAdvance;
-                    
-                    WordsIndex = 0;
-                    PatternRowAt++;
                 }
+                else
+                {
+                    u8 Text[] = "no match";
+                    DrawText(Buffer, &GameState->ItalicFont, FontScale, 
+                             sizeof(Text) - 1, Text, 
+                             TextOffset, color_rgb(0.6f), false);
+                }
+                TextOffset.Y += YAdvance;
             }
         }
         
