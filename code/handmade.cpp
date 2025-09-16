@@ -659,6 +659,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         InitFont(Thread, &GameState->RegularFont, Memory, "../data/fonts/jetbrains_mono_regular.ttf");
         InitFont(Thread, &GameState->ItalicFont, Memory, "../data/fonts/jetbrains_mono_italic.ttf");
         InitFont(Thread, &GameState->BoldFont, Memory, "../data/fonts/jetbrains_mono_bold.ttf");
+        // TODO(luca): Italic & Bold font.
         
         GameState->SelectedColor = SquareColor_Yellow;
         GameState->ExportedPatternIndex = 0;
@@ -1055,7 +1056,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     // NOTE(luca): Debug code for drawing inputted text.
 #if 1
     {
-        r32 FontScale = stbtt_ScaleForPixelHeight(&DefaultFont.Info, 20.0f);
+        r32 FontScale = stbtt_ScaleForPixelHeight(&DefaultFont.Info, 22.0);
         
         v2 Offset = {100.0f, 30.0f};
         
@@ -1091,6 +1092,16 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             DrawRectangle(Buffer, vMin + -1, vMax + 1, ColorBG);
         }
         
+        // TODO(luca): Placeholder text when text is empty. 
+        // Draw the text
+        {        
+            DrawText(Buffer, &DefaultFont, FontScale,
+                     GameState->TextInputCount, (u8 *)GameState->TextInputText,  
+                     Offset, ColorFG, true);
+            
+            Assert(GameState->TextInputCount <= ArrayCount(GameState->TextInputText));
+        }
+        
         // Draw cursor
         {
             v2 vMin = {Offset.X + TextWidth, Offset.Y - Baseline};
@@ -1098,13 +1109,8 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             DrawRectangle(Buffer, vMin, vMax, ColorFG);
         }
         
-        // Draw the text
-        DrawText(Buffer, &DefaultFont, FontScale,
-                 GameState->TextInputCount, (u8 *)GameState->TextInputText,  
-                 Offset, ColorFG, true);
-        
-        Assert(GameState->TextInputCount <= ArrayCount(GameState->TextInputText));
     }
+    
 #endif
     
 }
