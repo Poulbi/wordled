@@ -5,7 +5,7 @@ cd "$ThisDir"
 
 mkdir ../build > /dev/null 2>&1
 
-# Supported: clang, g++
+# Supported: clang
 Compiler="clang"
 
 CompilerFlags="
@@ -16,6 +16,7 @@ CompilerFlags="
 -DHANDMADE_SLOW
 -DOS_LINUX
 -nostdinc++
+
 "
 
 WarningFlags="-Wall
@@ -26,7 +27,10 @@ WarningFlags="-Wall
 -Wno-write-strings
 -Wno-pointer-arith
 -Wno-unused-parameter
--Wno-unused-function"
+-Wno-unused-function
+-Wno-int-to-pointer-cast
+-Wno-missing-field-initializers
+"
 
 ClangCompilerFlags="
 -ftime-trace
