@@ -1,1 +1,0 @@
-/home/void/proj/handmade/linuxhmh/handmade_platform.h
