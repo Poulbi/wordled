@@ -1,3 +1,4 @@
+code/libs/linuxhmh
 build/*.hmi
 build/*.zip
 build/*.tar.gz
