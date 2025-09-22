@@ -397,7 +397,7 @@ DEBUGLoadBMP(thread_context *Thread, debug_platform_read_entire_file *DEBUGPlatf
              char *FileName)
 {
     loaded_bitmap Result = {};
-    debug_read_file_result File = DEBUGPlatformReadEntireFile(Thread, FileName);
+    debug_platform_read_file_result File = DEBUGPlatformReadEntireFile(Thread, FileName);
     
     if(File.ContentsSize)
     {
@@ -619,7 +619,7 @@ AppendCharToInputText(game_state *GameState, rune Codepoint)
 internal void
 InitFont(thread_context *Thread, game_font *Font, game_memory *Memory, char *FilePath)
 {
-    debug_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, FilePath);
+    debug_platform_read_file_result File = Memory->DEBUGPlatformReadEntireFile(Thread, FilePath);
     
     if(File.Contents)
     {
@@ -937,7 +937,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         
         //-Matche the pattern
         rune *Word = GameState->WordleWord;
-        debug_read_file_result WordsFile = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
+        debug_platform_read_file_result WordsFile = Memory->DEBUGPlatformReadEntireFile(Thread, "../data/words.txt");
         
         int WordsCount = WordsFile.ContentsSize / WORDLE_LENGTH;
         if(WordsFile.Contents)
