@@ -4,10 +4,9 @@ ThisDir="$(dirname "$(readlink -f "$0")")"
 cd "$ThisDir"/..
 
 mkdir -p build
-./code/build.sh
+./code/build.sh release
 
 Zip="./build/wordled.zip"
-rm -f "$Zip"
 >&2 printf 'INFO: Creating zip.\n'
 rm -f "$Zip"
 zip "$Zip" build/linux_handmade build/handmade.so 

@@ -25,12 +25,17 @@ GetColorRGBForColorIndex(u32 Index)
     return Result;
 }
 
-void MemoryCopy(void *Dest, void *Source, size_t Count)
+#define MemoryCopy memcpy
+
+psize StringLength(char *String)
 {
-    u8 *DestinationByte = (u8 *)Dest;
-    u8 *SourceByte = (u8 *)Source;
-    while(Count--) *DestinationByte++ = *SourceByte++;
+    psize Result = 0;
+    
+    while(*String++) Result++;
+    
+    return Result;
 }
+
 
 //- Sound 
 internal s16
@@ -1107,6 +1112,42 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             v2 vMin = {Offset.X + TextWidth, Offset.Y - Baseline};
             v2 vMax = {vMin.X + CursorWidth, vMin.Y + TextHeight};
             DrawRectangle(Buffer, vMin, vMax, ColorFG);
+        }
+    }
+    
+    {
+        r32 FontScale = stbtt_ScaleForPixelHeight(&DefaultFont.Info, 20.0);
+        
+        char *Sentences[] = 
+        {
+            "key binds",
+            "- [Enter] to use new word",
+            "- ['a-z'] type new word",
+            "- [Control + 'u'] delete word",
+            "- [Up] get today's wordle",
+            "- [Left Button] paint with color",
+            "- [Scroll Up/Down] change color",
+        };
+        u32 SentencesCount = ArrayCount(Sentences);
+        u8 *Text = 0;
+        u32 TextLen = 0;
+        color_rgb TextColor = {0.8f, 0.8f, 0.8f};
+        
+        v2 Offset = {650.0f, 50.0f};
+        YAdvance = FontScale*(DefaultFont.Ascent - 
+                              DefaultFont.Descent + 
+                              DefaultFont.LineGap);
+        
+        for(u32 SentencesIndex = 0;
+            SentencesIndex < ArrayCount(Sentences);
+            SentencesIndex++)
+        {
+            Text = (u8 *)Sentences[SentencesIndex];
+            TextLen = StringLength((char *)Text);
+            
+            DrawText(Buffer, &DefaultFont, FontScale, 
+                     TextLen, Text, Offset, TextColor, false);
+            Offset.Y += YAdvance;
         }
         
     }
