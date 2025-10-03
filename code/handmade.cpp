@@ -26,7 +26,7 @@ GetColorRGBForColorIndex(u32 Index)
 
 #define MemoryCopy memcpy
 
-psize StringLength(char *String)
+psize CStringLength(char *String)
 {
     psize Result = 0;
     
@@ -1117,7 +1117,7 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     {
         r32 FontScale = stbtt_ScaleForPixelHeight(&DefaultFont.Info, 20.0);
         
-        char *Sentences[] = 
+        char *HelpLines[] = 
         {
             "key binds",
             "- [Enter] to use new word",
@@ -1127,25 +1127,24 @@ extern "C" GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             "- [Left Button] paint with color",
             "- [Scroll Up/Down] change color",
         };
-        u32 SentencesCount = ArrayCount(Sentences);
-        u8 *Text = 0;
-        u32 TextLen = 0;
-        color_rgb TextColor = {0.8f, 0.8f, 0.8f};
+        u32 LinesCount = ArrayCount(HelpLines);
+        // color_rgb TextColor = {0.8f, 0.8f, 0.8f};
+        color_rgb TextColor = {0.71f, 0.62f, 0.53f};
         
         v2 Offset = {650.0f, 50.0f};
         YAdvance = FontScale*(DefaultFont.Ascent - 
                               DefaultFont.Descent + 
                               DefaultFont.LineGap);
         
-        for(u32 SentencesIndex = 0;
-            SentencesIndex < ArrayCount(Sentences);
-            SentencesIndex++)
+        for(u32 LinesIndex = 0;
+            LinesIndex < ArrayCount(HelpLines);
+            LinesIndex++)
         {
-            Text = (u8 *)Sentences[SentencesIndex];
-            TextLen = StringLength((char *)Text);
+            char *Text = HelpLines[LinesIndex];
+            u32 TextLen = CStringLength(Text);
             
             DrawText(Buffer, &DefaultFont, FontScale, 
-                     TextLen, Text, Offset, TextColor, false);
+                     TextLen, (u8 *)Text, Offset, TextColor, false);
             Offset.Y += YAdvance;
         }
         
