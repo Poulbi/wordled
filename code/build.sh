@@ -34,6 +34,7 @@ WarningFlags="-Wall
 "
 
 ClangCompilerFlags="
+-fdiagnostics-absolute-paths
 -ftime-trace
 "
 ClangWarningFlags="
