@@ -3,7 +3,7 @@
 //~ Libraries 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "libs/stb_truetype.h"
-#include "libs/linuxhmh/handmade_platform.h"
+#include "handmade_platform.h"
 
 #include "handmade_intrinsics.h"
 #include "handmade_math.h"
