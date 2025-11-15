@@ -1,7 +1,6 @@
 code/libs/hm_linux
-build/*.hmi
-build/*.zip
-build/*.tar.gz
+code/libs/hm_win32
+build/
 game.zip
 *.o
 *.json
