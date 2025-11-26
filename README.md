@@ -18,6 +18,7 @@ Run the `win32_handmade.exe` executable from the `build` directory.
 Since I cannot guarantee binary compability, please follow the build instructions.
 
 Following dependencies are required, but should already be installed on most distributions.
+
 - [hm_linux](https://git.spacehb.net/hm_linux/about/?h=main), my linux platform layer.  Put it in `./code/libs/`.
 - `libasound.so`
 - `libcurl.so`
