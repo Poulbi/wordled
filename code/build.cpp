@@ -1,6 +1,6 @@
 #include "libs/build.h"
 
-void Build(char *Name, str8 Flags)
+void Build(char *Env[], char *Name, str8 Flags)
 {
     
     printf("%s\n", Name);
@@ -23,15 +23,16 @@ int main(int ArgsCount, char *Args[], char *Env[])
     LinuxChangeToExecutableDirectory(Args);
     LinuxRebuildSelf(ArgsCount, Args, Env);
     
-    Build("[linux handmade compile]", S8Lit("-DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1 -DHANDMADE_SMALL_RESOLUTION=1 "
-                                            "-lX11 -lXfixes -lasound "
-                                            "-o linux_handmade "
-                                            "../code/libs/hm_linux/linux_handmade.cpp"));
+    Build(Env, "[linux handmade compile]",
+						    S8Lit("-DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1 -DHANDMADE_SMALL_RESOLUTION=1 "
+                "-lX11 -lXfixes -lasound "
+                "-o linux_handmade "
+                "../code/libs/hm_linux/linux_handmade.cpp"));
     
-    Build("[handmade compile]", 
+    Build(Env, "[handmade compile]", 
           S8Lit("-shared -fPIC "
                 "-DHANDMADE_INTERNAL=1 -DHANDMADE_SLOW=1"
-                "-Wno-conversion "
+                "-Wno-implicit-int-float-conversion -Wno-float-conversion -Wno-implicit-float-conversion -Wno-shorten-64-to-32 "
                 "-o handmade.so "
                 "../code/handmade.cpp"));
     
