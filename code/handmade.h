@@ -1,9 +1,12 @@
 #if !defined(HANDMADE_H)
 
+#include "handmade_platform.h"
+
 //~ Libraries 
+PUSH_WARNINGS
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "libs/stb_truetype.h"
-#include "handmade_platform.h"
+POP_WARNINGS
 
 #include "handmade_intrinsics.h"
 #include "handmade_math.h"
